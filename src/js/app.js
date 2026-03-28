@@ -1942,7 +1942,12 @@ function setupStatusListener() {
     // Add to notification history and send push notification
     if (shouldNotify) {
       const notifStatus = commandCompleted ? 'CommandCompleted' : status;
-      addNotification(session.name, notifStatus, idx);
+      // CommandCompleted is opt-in (default off) — skip alert panel + push if disabled
+      if (notifStatus === 'CommandCompleted' && localStorage.getItem('ps-notify-completed') !== 'true') {
+        // skip
+      } else {
+        addNotification(session.name, notifStatus, idx);
+      }
       maybeNotify(session, notifStatus);
     }
 
@@ -2500,10 +2505,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Window drag via Tauri startDragging (replaces CSS -webkit-app-region: drag)
+  // Only skip actual interactive elements — empty gaps between buttons are still draggable
   document.getElementById('toolbar').addEventListener('mousedown', (e) => {
-    if (e.target.closest('#toolbar-left') || e.target.closest('#toolbar-right')) return;
+    if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select') || e.target.closest('a')) return;
     e.preventDefault();
-    window.__TAURI__.window.getCurrentWindow().startDragging();
+    invoke('plugin:window|start_dragging');
   });
 
   // Notification panel toggle
