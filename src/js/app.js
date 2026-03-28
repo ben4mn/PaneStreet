@@ -1955,6 +1955,68 @@ function setupStatusListener() {
   });
 }
 
+// --- Startup Update Check ---
+
+async function checkForUpdateOnStartup() {
+  try {
+    const update = await invoke('plugin:updater|check', {});
+    if (!update) return;
+
+    // Don't nag if user already dismissed this version
+    const dismissed = localStorage.getItem('ps-update-dismissed');
+    if (dismissed === update.version) return;
+
+    // Create a non-intrusive banner at the top of the content area
+    const banner = document.createElement('div');
+    banner.id = 'update-banner';
+    banner.innerHTML = `
+      <span>Version ${update.version} is available.</span>
+      <button id="update-banner-install">Update now</button>
+      <button id="update-banner-dismiss">&times;</button>
+    `;
+    const main = document.getElementById('main');
+    main.insertBefore(banner, main.children[1]); // after toolbar
+
+    banner.querySelector('#update-banner-dismiss').addEventListener('click', () => {
+      localStorage.setItem('ps-update-dismissed', update.version);
+      banner.remove();
+    });
+
+    banner.querySelector('#update-banner-install').addEventListener('click', async () => {
+      const installBtn = banner.querySelector('#update-banner-install');
+      installBtn.disabled = true;
+      installBtn.textContent = 'Downloading...';
+
+      try {
+        const channel = new window.__TAURI__.core.Channel();
+        channel.onmessage = (event) => {
+          if (event.event === 'Finished') {
+            installBtn.textContent = 'Restarting...';
+          }
+        };
+
+        await invoke('plugin:updater|download_and_install', {
+          rid: update.rid,
+          onEvent: channel,
+        });
+
+        setTimeout(async () => {
+          try { await invoke('plugin:process|restart'); }
+          catch { installBtn.textContent = 'Restart manually'; }
+        }, 1500);
+
+      } catch (err) {
+        console.warn('[update] Install failed:', err);
+        installBtn.textContent = 'Failed — try Settings';
+        installBtn.disabled = false;
+      }
+    });
+  } catch (err) {
+    // Silently fail — updater not configured or no network
+    console.log('[update] Startup check skipped:', err);
+  }
+}
+
 // --- Robot Mascot (JS state machine) ---
 
 const ACTIVITIES = [
@@ -2608,6 +2670,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Welcome message after a brief delay (let CWD resolve)
   setTimeout(() => showWelcomeMessage(), 1500);
+
+  // Check for updates on startup (non-blocking, dismissible)
+  setTimeout(() => checkForUpdateOnStartup(), 3000);
 
   setInterval(updateGitInfo, 5000);
 

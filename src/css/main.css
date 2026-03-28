@@ -398,6 +398,42 @@ html, body {
   gap: 8px;
 }
 
+/* Update banner */
+#update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: var(--accent);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  z-index: 4;
+}
+#update-banner button {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+#update-banner #update-banner-install {
+  background: rgba(255,255,255,0.2);
+  font-weight: 600;
+}
+#update-banner #update-banner-install:hover {
+  background: rgba(255,255,255,0.35);
+}
+#update-banner #update-banner-dismiss {
+  margin-left: auto;
+  font-size: 14px;
+  opacity: 0.7;
+}
+#update-banner #update-banner-dismiss:hover {
+  opacity: 1;
+}
+
 #toolbar-layout-toggle {
   display: flex;
   align-items: center;
