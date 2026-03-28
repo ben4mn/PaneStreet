@@ -1,5 +1,6 @@
 mod auth_manager;
 mod config_reader;
+mod file_viewer;
 mod pty_manager;
 mod status_detector;
 mod worktree_manager;
@@ -27,6 +28,9 @@ pub fn run() {
             auth_manager::save_api_key,
             auth_manager::get_auth_status,
             auth_manager::delete_api_key,
+            file_viewer::read_directory,
+            file_viewer::read_file_content,
+            file_viewer::open_in_finder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

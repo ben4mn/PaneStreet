@@ -1,5 +1,6 @@
 import { TerminalSession } from './terminal.js';
 import { togglePanel, hidePanel, isAnyPanelActive, setOnHide, loadSavedTheme } from './config-panels.js';
+import { initFileViewer, toggleFileViewer, updateFileViewerCwd, hideFileViewer, isFileViewerVisible } from './file-viewer.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -66,6 +67,7 @@ function setFocus(index) {
   sessions[index].terminal.focus();
   updateGitInfo();
   updateMascot(sessions[index].status || 'Idle');
+  updateFileViewerCwd(sessions[index].cwd);
 }
 
 function focusNextVisible(fromIndex, direction) {
@@ -625,21 +627,66 @@ function setupConfigButtons() {
   });
 }
 
+// --- Sidebar Toggle ---
+
+function setupSidebarToggle() {
+  const sidebar = document.getElementById('sidebar');
+  const toggleBtn = document.getElementById('sidebar-toggle');
+
+  // Restore from localStorage
+  if (localStorage.getItem('ps-sidebar-collapsed') === 'true') {
+    sidebar.classList.add('collapsed');
+  }
+
+  toggleBtn.addEventListener('click', () => {
+    sidebar.classList.toggle('collapsed');
+    localStorage.setItem('ps-sidebar-collapsed', sidebar.classList.contains('collapsed'));
+  });
+
+  // Re-fit terminals after sidebar transition completes
+  sidebar.addEventListener('transitionend', (e) => {
+    if (e.propertyName === 'width') {
+      fitVisibleTerminals();
+    }
+  });
+}
+
 // --- Keyboard Shortcuts ---
 
 function setupShortcuts() {
   document.addEventListener('keydown', (e) => {
-    // Escape — close config panel if active
-    if (e.key === 'Escape' && isAnyPanelActive()) {
-      e.preventDefault();
-      hidePanel();
-      return;
+    // Escape — close config panel or file viewer
+    if (e.key === 'Escape') {
+      if (isAnyPanelActive()) {
+        e.preventDefault();
+        hidePanel();
+        return;
+      }
+      if (isFileViewerVisible()) {
+        e.preventDefault();
+        hideFileViewer();
+        return;
+      }
     }
 
     // Cmd+, — toggle settings (standard macOS)
     if (e.metaKey && e.key === ',') {
       e.preventDefault();
       togglePanel('settings');
+      return;
+    }
+
+    // Cmd+B — toggle sidebar collapse
+    if (e.metaKey && !e.shiftKey && e.key === 'b') {
+      e.preventDefault();
+      document.getElementById('sidebar-toggle').click();
+      return;
+    }
+
+    // Cmd+Shift+E — toggle file viewer
+    if (e.metaKey && e.shiftKey && (e.key === 'e' || e.key === 'E')) {
+      e.preventDefault();
+      toggleFileViewer();
       return;
     }
 
@@ -774,12 +821,40 @@ function robotInit() {
   robotEl = document.getElementById('footer-mascot');
   if (!robotEl) return;
 
+  const overlay = document.getElementById('robot-overlay');
+
+  // Check saved preference
+  if (localStorage.getItem('ps-robot-enabled') === 'false') {
+    overlay?.classList.add('hidden');
+    return;
+  }
+
   // Click interaction
-  document.getElementById('footer-mascot-area')?.addEventListener('click', () => {
-    showSpeech(SPEECH_CLICK[Math.floor(Math.random() * SPEECH_CLICK.length)]);
+  overlay?.addEventListener('click', (e) => {
+    // Only respond if clicking near the mascot
+    const rect = robotEl.getBoundingClientRect();
+    const dx = e.clientX - (rect.left + rect.width / 2);
+    const dy = e.clientY - (rect.top + rect.height / 2);
+    if (Math.abs(dx) < 40 && Math.abs(dy) < 50) {
+      showSpeech(SPEECH_CLICK[Math.floor(Math.random() * SPEECH_CLICK.length)]);
+    }
   });
 
   robotNext();
+}
+
+function toggleRobot(enabled) {
+  const overlay = document.getElementById('robot-overlay');
+  if (!overlay) return;
+  if (enabled) {
+    overlay.classList.remove('hidden');
+    localStorage.setItem('ps-robot-enabled', 'true');
+    if (!robotOverride) robotNext();
+  } else {
+    overlay.classList.add('hidden');
+    localStorage.setItem('ps-robot-enabled', 'false');
+    clearTimeout(robotTimer);
+  }
 }
 
 function robotNext() {
@@ -797,8 +872,8 @@ function robotWalk() {
   robotClearActivity();
   robotEl.classList.add('walking');
 
-  // Pick a random destination
-  const maxX = 125;
+  // Pick a random destination across full window width
+  const maxX = Math.max(200, window.innerWidth - 80);
   const dest = Math.floor(Math.random() * maxX);
   const currentLeft = parseInt(robotEl.style.left) || 4;
   const distance = Math.abs(dest - currentLeft);
@@ -928,15 +1003,25 @@ function saveSessionState() {
 document.addEventListener('DOMContentLoaded', async () => {
   setupNewSessionButton();
   setupShortcuts();
+  setupSidebarToggle();
   setupGitInfoClick();
   setupConfigButtons();
   setupStatusListener();
+  initFileViewer();
   loadSavedTheme();
 
   // Listen for terminal theme changes from the theme designer
   window.addEventListener('theme-terminal-changed', (e) => {
     sessions.forEach(s => s.terminal.updateTheme(e.detail));
   });
+
+  // Re-fit terminals when file viewer opens/closes
+  window.addEventListener('file-viewer-changed', () => {
+    requestAnimationFrame(() => fitVisibleTerminals());
+  });
+
+  // Listen for robot toggle from settings
+  window.addEventListener('robot-toggle', (e) => toggleRobot(e.detail));
 
   // Request notification permission
   if (typeof Notification !== 'undefined' && Notification.permission === 'default') {

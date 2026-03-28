@@ -11,6 +11,7 @@ export function setOnHide(callback) {
 
 export function showPanel(panelName) {
   document.getElementById('pane-grid').style.display = 'none';
+  document.getElementById('file-viewer').style.display = 'none';
   document.querySelectorAll('.config-panel').forEach(p => p.style.display = 'none');
 
   const panel = document.getElementById(`${panelName}-panel`);
@@ -33,6 +34,10 @@ export function showPanel(panelName) {
 export function hidePanel() {
   document.querySelectorAll('.config-panel').forEach(p => p.style.display = 'none');
   document.getElementById('pane-grid').style.display = '';
+  // Restore file viewer if it was visible
+  if (document.getElementById('fv-toggle-btn')?.classList.contains('active')) {
+    document.getElementById('file-viewer').style.display = 'flex';
+  }
   document.querySelectorAll('#sidebar-actions button').forEach(b => b.classList.remove('panel-active'));
   activePanel = null;
   if (onHideCallback) onHideCallback();
@@ -94,6 +99,7 @@ async function renderSettingsTab(tab) {
     const gitShowDirty = localStorage.getItem('ps-git-show-dirty') !== 'false';
     const gitPollInterval = localStorage.getItem('ps-git-poll') || '5';
     const notificationsEnabled = localStorage.getItem('ps-notifications') !== 'false';
+    const robotEnabled = localStorage.getItem('ps-robot-enabled') !== 'false';
 
     container.innerHTML = `
       <div class="settings-group">
@@ -194,6 +200,22 @@ async function renderSettingsTab(tab) {
         </div>
       </div>
 
+      <div class="settings-group">
+        <div class="setting-section-title">Mascot</div>
+        <div class="setting-row-stacked">
+          <div class="setting-row-inline">
+            <div>
+              <div class="setting-label">Show robot mascot</div>
+              <div class="setting-description">Toggle the animated robot companion that walks across your screen</div>
+            </div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-robot" ${robotEnabled ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
       <button class="settings-save-btn" id="general-save">Save &amp; Apply</button>
       <span class="settings-save-msg" id="general-msg"></span>
     `;
@@ -240,6 +262,9 @@ async function renderSettingsTab(tab) {
       localStorage.setItem('ps-git-show-dirty', container.querySelector('#pref-git-dirty').checked);
       localStorage.setItem('ps-git-poll', gitPollEl.value);
       localStorage.setItem('ps-notifications', container.querySelector('#pref-notifications').checked);
+      const robotChecked = container.querySelector('#pref-robot').checked;
+      localStorage.setItem('ps-robot-enabled', robotChecked);
+      window.dispatchEvent(new CustomEvent('robot-toggle', { detail: robotChecked }));
       const msg = container.querySelector('#general-msg');
       msg.textContent = 'Saved! Settings applied.';
       msg.style.color = 'var(--status-idle)';
