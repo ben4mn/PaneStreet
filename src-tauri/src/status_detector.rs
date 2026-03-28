@@ -14,6 +14,8 @@ pub enum SessionStatus {
     Idle,
     WaitingForInput,
     NeedsPermission,
+    Error,
+    ClaudeFinished,
     Exited,
 }
 
@@ -24,6 +26,8 @@ impl SessionStatus {
             Self::Idle => "Idle",
             Self::WaitingForInput => "WaitingForInput",
             Self::NeedsPermission => "NeedsPermission",
+            Self::Error => "Error",
+            Self::ClaudeFinished => "ClaudeFinished",
             Self::Exited => "Exited",
         }
     }
@@ -153,6 +157,26 @@ fn analyze_buffer(buffer: &[u8]) -> SessionStatus {
     // Check for permission/sudo
     if tail.contains("Permission denied") || tail.contains("sudo:") {
         return SessionStatus::NeedsPermission;
+    }
+
+    // Check for Claude Code task completion
+    if tail.contains("Total cost:") || tail.contains("Total tokens:") {
+        return SessionStatus::ClaudeFinished;
+    }
+
+    // Check for common error patterns
+    if tail.contains("command not found")
+        || tail.contains("No such file or directory")
+        || tail.contains("FATAL")
+        || tail.contains("panic:")
+        || tail.contains("Traceback (most recent call last)")
+        || tail.contains("error:")
+        || tail.contains("Error:")
+        || tail.contains("SyntaxError")
+        || tail.contains("TypeError")
+        || tail.contains("ReferenceError")
+    {
+        return SessionStatus::Error;
     }
 
     // If we just received output, we're working

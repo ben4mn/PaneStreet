@@ -1766,9 +1766,14 @@ function renderNotificationPanel() {
       WaitingForInput: 'Waiting for input',
       NeedsPermission: 'Needs permission',
       Exited: 'Exited',
+      CommandCompleted: 'Command completed',
+      Error: 'Error detected',
+      ClaudeFinished: 'Claude finished',
     }[n.status] || n.status;
+    const dotColorMap = { WaitingForInput: 'waiting', NeedsPermission: 'waiting', Exited: 'exited', Error: 'exited', ClaudeFinished: 'idle', CommandCompleted: 'idle' };
+    const dotColor = dotColorMap[statusClass] || 'working';
     return `<div class="notif-item" data-index="${n.sessionIndex}">
-      <span class="notif-dot" style="background:var(--status-${statusClass === 'WaitingForInput' || statusClass === 'NeedsPermission' ? 'waiting' : statusClass === 'Exited' ? 'exited' : 'working'})"></span>
+      <span class="notif-dot" style="background:var(--status-${dotColor})"></span>
       <span class="notif-session">${n.sessionName}</span>
       <span class="notif-status">${statusLabel}</span>
       <span class="notif-time">${timeStr}</span>
@@ -1828,6 +1833,8 @@ const STATUS_COLORS = {
   Idle: 'var(--status-idle)',
   WaitingForInput: 'var(--status-waiting)',
   NeedsPermission: 'var(--status-permission)',
+  Error: 'var(--status-exited)',
+  ClaudeFinished: 'var(--status-idle)',
   Exited: 'var(--status-exited)',
 };
 
@@ -1841,15 +1848,26 @@ async function maybeNotify(session, status) {
     WaitingForInput: 'ps-notify-waiting',
     NeedsPermission: 'ps-notify-permission',
     Exited: 'ps-notify-exited',
+    CommandCompleted: 'ps-notify-completed',
+    Error: 'ps-notify-error',
+    ClaudeFinished: 'ps-notify-claude-finished',
   };
   const toggleKey = statusToggleMap[status];
   if (!toggleKey) return;
-  if (localStorage.getItem(toggleKey) === 'false') return;
+  // CommandCompleted defaults to off (opt-in); others default to on
+  if (status === 'CommandCompleted') {
+    if (localStorage.getItem(toggleKey) !== 'true') return;
+  } else {
+    if (localStorage.getItem(toggleKey) === 'false') return;
+  }
 
   const messages = {
     WaitingForInput: 'is waiting for your input',
     NeedsPermission: 'needs permission to continue',
     Exited: 'has finished',
+    CommandCompleted: 'command completed',
+    Error: 'encountered an error',
+    ClaudeFinished: 'Claude task completed',
   };
   const msg = messages[status];
   if (!msg) return;
@@ -1879,6 +1897,7 @@ function setupStatusListener() {
     const session = sessions.find(s => s.id === session_id);
     if (!session) return;
 
+    const previousStatus = session.status || 'Idle';
     session.status = status;
     const color = STATUS_COLORS[status] || 'var(--status-idle)';
 
@@ -1906,7 +1925,10 @@ function setupStatusListener() {
     }
 
     // Notification ring on unfocused panes that need attention
-    const needsAttention = status === 'WaitingForInput' || status === 'NeedsPermission' || status === 'Exited';
+    const needsAttention = ['WaitingForInput', 'NeedsPermission', 'Exited', 'Error', 'ClaudeFinished'].includes(status);
+    const commandCompleted = (previousStatus === 'Working' && status === 'Idle');
+    const shouldNotify = needsAttention || commandCompleted;
+
     if (needsAttention && idx !== focusedIndex) {
       session.pane.classList.add('notify-ring');
       const card = document.querySelectorAll('.session-card')[idx];
@@ -1917,13 +1939,14 @@ function setupStatusListener() {
       if (card) card.classList.remove('notify-badge');
     }
 
-    // Add to notification history
-    if (needsAttention) {
-      addNotification(session.name, status, idx);
+    // Add to notification history and send push notification
+    if (shouldNotify) {
+      const notifStatus = commandCompleted ? 'CommandCompleted' : status;
+      addNotification(session.name, notifStatus, idx);
+      maybeNotify(session, notifStatus);
     }
 
     triggerMascotBounce();
-    maybeNotify(session, status);
   });
 }
 
@@ -2474,6 +2497,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (sessions[idx].minimized) restoreSession(idx);
       else setFocus(idx);
     }
+  });
+
+  // Window drag via Tauri startDragging (replaces CSS -webkit-app-region: drag)
+  document.getElementById('toolbar').addEventListener('mousedown', (e) => {
+    if (e.target.closest('#toolbar-left') || e.target.closest('#toolbar-right')) return;
+    e.preventDefault();
+    window.__TAURI__.window.getCurrentWindow().startDragging();
   });
 
   // Notification panel toggle

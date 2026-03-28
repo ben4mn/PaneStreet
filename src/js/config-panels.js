@@ -240,6 +240,9 @@ async function renderSettingsTab(tab) {
     const notifyOnWaiting = localStorage.getItem('ps-notify-waiting') !== 'false';
     const notifyOnPermission = localStorage.getItem('ps-notify-permission') !== 'false';
     const notifyOnExited = localStorage.getItem('ps-notify-exited') !== 'false';
+    const notifyOnCompleted = localStorage.getItem('ps-notify-completed') === 'true';
+    const notifyOnError = localStorage.getItem('ps-notify-error') !== 'false';
+    const notifyOnClaudeFinished = localStorage.getItem('ps-notify-claude-finished') !== 'false';
     const notifySound = localStorage.getItem('ps-notify-sound') !== 'false';
     const robotEnabled = localStorage.getItem('ps-robot-enabled') !== 'false';
 
@@ -370,6 +373,30 @@ async function renderSettingsTab(tab) {
             </label>
           </div>
 
+          <div class="setting-row-inline" style="padding:4px 0">
+            <div class="setting-label">Command completed (Working → Idle)</div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-notify-completed" ${notifyOnCompleted ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row-inline" style="padding:4px 0">
+            <div class="setting-label">Terminal error detected</div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-notify-error" ${notifyOnError ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row-inline" style="padding:4px 0">
+            <div class="setting-label">Claude task completed</div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-notify-claude-finished" ${notifyOnClaudeFinished ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+
           <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px">
             <div class="setting-row-inline">
               <div>
@@ -462,6 +489,9 @@ async function renderSettingsTab(tab) {
       localStorage.setItem('ps-notify-waiting', container.querySelector('#pref-notify-waiting').checked);
       localStorage.setItem('ps-notify-permission', container.querySelector('#pref-notify-permission').checked);
       localStorage.setItem('ps-notify-exited', container.querySelector('#pref-notify-exited').checked);
+      localStorage.setItem('ps-notify-completed', container.querySelector('#pref-notify-completed').checked);
+      localStorage.setItem('ps-notify-error', container.querySelector('#pref-notify-error').checked);
+      localStorage.setItem('ps-notify-claude-finished', container.querySelector('#pref-notify-claude-finished').checked);
       localStorage.setItem('ps-notify-sound', container.querySelector('#pref-notify-sound').checked);
       const robotChecked = container.querySelector('#pref-robot').checked;
       localStorage.setItem('ps-robot-enabled', robotChecked);
@@ -606,18 +636,88 @@ async function renderSettingsTab(tab) {
     } catch {}
 
     container.innerHTML = `
-      <div class="setting-row">
-        <div class="setting-label">Version</div>
-        <div class="setting-value">${version}</div>
+      <div class="settings-group">
+        <div class="setting-row">
+          <div class="setting-label">Version</div>
+          <div class="setting-value">${version}</div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label">Platform</div>
+          <div class="setting-value">macOS</div>
+        </div>
       </div>
-      <div class="setting-row">
-        <div class="setting-label">Platform</div>
-        <div class="setting-value">macOS</div>
+
+      <div class="settings-group">
+        <div class="setting-section-title">Updates</div>
+        <div class="setting-row-stacked">
+          <div class="setting-description">Check if a newer version is available on GitHub.</div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:12px">
+            <button class="setting-browse-btn" id="check-update-btn" style="width:auto;padding:6px 16px">
+              Check for Updates
+            </button>
+            <span id="update-status-msg" style="font-size:var(--font-size-xs);color:var(--text-muted)"></span>
+          </div>
+          <div id="update-download-row" style="display:none;margin-top:12px">
+            <a id="update-download-link" href="#" style="color:var(--accent);font-size:var(--font-size-sm);text-decoration:underline;cursor:pointer">
+              Download latest version
+            </a>
+          </div>
+        </div>
       </div>
+
       <div style="margin-top:20px">
         <div class="setting-description">Pane Street — Multi-session Claude Code terminal manager</div>
       </div>
     `;
+
+    container.querySelector('#check-update-btn').addEventListener('click', async () => {
+      const msgEl = container.querySelector('#update-status-msg');
+      const downloadRow = container.querySelector('#update-download-row');
+      const downloadLink = container.querySelector('#update-download-link');
+
+      msgEl.textContent = 'Checking...';
+      msgEl.style.color = 'var(--text-muted)';
+      downloadRow.style.display = 'none';
+
+      try {
+        const resp = await fetch('https://api.github.com/repos/ben4mn/PaneStreet/releases/latest');
+        if (!resp.ok) throw new Error('GitHub API returned ' + resp.status);
+        const data = await resp.json();
+
+        const latestTag = data.tag_name.replace(/^v/, '');
+        const currentParts = version.split('.').map(Number);
+        const latestParts = latestTag.split('.').map(Number);
+
+        let isNewer = false;
+        for (let i = 0; i < 3; i++) {
+          const c = currentParts[i] || 0;
+          const l = latestParts[i] || 0;
+          if (l > c) { isNewer = true; break; }
+          if (l < c) break;
+        }
+
+        if (isNewer) {
+          msgEl.textContent = 'New version ' + latestTag + ' available!';
+          msgEl.style.color = 'var(--status-waiting)';
+          downloadRow.style.display = '';
+          downloadLink.textContent = 'Download v' + latestTag;
+          downloadLink.onclick = (e) => {
+            e.preventDefault();
+            try {
+              window.__TAURI__.opener.openUrl(data.html_url);
+            } catch {
+              window.open(data.html_url, '_blank');
+            }
+          };
+        } else {
+          msgEl.textContent = "You're up to date! (v" + version + ')';
+          msgEl.style.color = 'var(--status-idle)';
+        }
+      } catch (err) {
+        msgEl.textContent = 'Failed to check: ' + err.message;
+        msgEl.style.color = 'var(--status-exited)';
+      }
+    });
   }
 }
 

@@ -388,7 +388,6 @@ html, body {
   padding: 0 12px;
   gap: 12px;
   border-bottom: 1px solid var(--border);
-  -webkit-app-region: drag;
   position: relative;
   z-index: 5;
 }
@@ -397,7 +396,6 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  -webkit-app-region: no-drag;
 }
 
 #toolbar-layout-toggle {
