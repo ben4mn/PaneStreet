@@ -118,16 +118,39 @@ pub fn read_file_content(path: String, max_bytes: Option<u64>) -> Result<FileCon
 #[tauri::command]
 pub fn open_in_finder(path: String) -> Result<(), String> {
     let target = Path::new(&path);
-    let dir = if target.is_dir() {
-        path.clone()
+
+    if target.is_file() {
+        Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map_err(|e| format!("Failed to open Finder: {}", e))?;
     } else {
-        target.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or(path.clone())
-    };
+        let dir = if target.is_dir() {
+            path.clone()
+        } else {
+            target.parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "/".to_string())
+        };
+        Command::new("open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open Finder: {}", e))?;
+    }
 
+    // Send Cmd+Shift+. to Finder to show hidden files
+    let _ = Command::new("osascript")
+        .args(["-e", r#"tell application "System Events" to tell process "Finder" to keystroke "." using {command down, shift down}"#])
+        .spawn();
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_with_default(path: String) -> Result<(), String> {
     Command::new("open")
-        .arg(&dir)
+        .arg(&path)
         .spawn()
-        .map_err(|e| format!("Failed to open Finder: {}", e))?;
-
+        .map_err(|e| format!("Failed to open: {}", e))?;
     Ok(())
 }

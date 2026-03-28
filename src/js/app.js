@@ -9,8 +9,18 @@ const sessions = [];
 let focusedIndex = 0;
 let maximizedIndex = null;
 let contextMenu = null;
-let sessionCounter = 0;
+function nextTerminalNumber() {
+  const used = new Set();
+  for (const s of sessions) {
+    const m = s.name.match(/^Terminal (\d+)$/);
+    if (m) used.add(parseInt(m[1]));
+  }
+  let n = 1;
+  while (used.has(n)) n++;
+  return n;
+}
 let windowFocused = true;
+let pendingTerminalSettings = null;
 window.addEventListener('focus', () => { windowFocused = true; });
 window.addEventListener('blur', () => { windowFocused = false; });
 
@@ -151,8 +161,7 @@ function createPane(name) {
 // --- Session Lifecycle ---
 
 async function createSession(restoreCwd) {
-  sessionCounter++;
-  const sessionName = `Terminal ${sessionCounter}`;
+  const sessionName = `Terminal ${nextTerminalNumber()}`;
 
   // Cap at 6 visible — auto-minimize oldest visible if needed
   const visibleCount = sessions.filter(s => !s.minimized).length;
@@ -375,9 +384,14 @@ function addSessionToSidebar(name, index, minimized) {
     shortcut.textContent = `⌘${index + 1}`;
   }
 
+  const badge = document.createElement('span');
+  badge.className = 'session-badge';
+  badge.textContent = index + 1;
+
   card.appendChild(dot);
   card.appendChild(nameEl);
   card.appendChild(shortcut);
+  card.appendChild(badge);
 
   // Click to focus
   card.addEventListener('click', () => {
@@ -633,13 +647,17 @@ function setupSidebarToggle() {
   const sidebar = document.getElementById('sidebar');
   const toggleBtn = document.getElementById('sidebar-toggle');
 
+  const robotOverlay = document.getElementById('robot-overlay');
+
   // Restore from localStorage
   if (localStorage.getItem('ps-sidebar-collapsed') === 'true') {
     sidebar.classList.add('collapsed');
+    robotOverlay?.classList.add('sidebar-collapsed');
   }
 
   toggleBtn.addEventListener('click', () => {
     sidebar.classList.toggle('collapsed');
+    robotOverlay?.classList.toggle('sidebar-collapsed', sidebar.classList.contains('collapsed'));
     localStorage.setItem('ps-sidebar-collapsed', sidebar.classList.contains('collapsed'));
   });
 
@@ -686,7 +704,7 @@ function setupShortcuts() {
     // Cmd+Shift+E — toggle file viewer
     if (e.metaKey && e.shiftKey && (e.key === 'e' || e.key === 'E')) {
       e.preventDefault();
-      toggleFileViewer();
+      toggleFileViewer(sessions[focusedIndex]?.cwd);
       return;
     }
 
@@ -786,6 +804,11 @@ function setupStatusListener() {
       updateMascot(status);
     }
 
+    // Apply pending terminal settings when session becomes idle
+    if (pendingTerminalSettings && (status === 'Idle' || status === 'WaitingForInput')) {
+      session.terminal.applySettings(pendingTerminalSettings);
+    }
+
     triggerMascotBounce();
     maybeNotify(session, status);
   });
@@ -794,16 +817,31 @@ function setupStatusListener() {
 // --- Robot Mascot (JS state machine) ---
 
 const ACTIVITIES = [
-  { name: 'stand',   cls: 'act-stand',   duration: [8, 15] },
-  { name: 'look',    cls: 'act-look',    duration: [6, 10] },
+  { name: 'stand',   cls: 'act-stand',   duration: [20, 40] },
+  { name: 'look',    cls: 'act-look',    duration: [8, 14] },
   { name: 'wave',    cls: 'act-wave',    duration: [4, 6],  speech: 'Hi!' },
-  { name: 'sleep',   cls: 'act-sleep',   duration: [12, 20] },
+  { name: 'sleep',   cls: 'act-sleep',   duration: [30, 60] },
   { name: 'stretch', cls: 'act-stretch', duration: [5, 8] },
-  { name: 'nod',     cls: 'act-nod',     duration: [4, 7] },
-  { name: 'think',   cls: 'act-think',   duration: [8, 14] },
-  { name: 'dance',   cls: 'act-dance',   duration: [5, 8] },
-  { name: 'type',    cls: 'act-type',    duration: [6, 12] },
-  { name: 'bounce',  cls: 'act-bounce',  duration: [4, 6] },
+  { name: 'nod',     cls: 'act-nod',     duration: [4, 6] },
+  { name: 'think',   cls: 'act-think',   duration: [15, 25] },
+  { name: 'dance',   cls: 'act-dance',   duration: [4, 7] },
+  { name: 'type',    cls: 'act-type',    duration: [10, 18] },
+  { name: 'bounce',  cls: 'act-bounce',  duration: [3, 5] },
+];
+
+const APP_TIPS = [
+  'Cmd+N for a new terminal',
+  'Cmd+1-9 to switch sessions',
+  'Double-click a header to maximize',
+  'Cmd+Shift+E opens the file viewer',
+  'Cmd+, opens settings',
+  'Drag sidebar cards to reorder',
+  'Right-click a session to rename',
+  'Up to 6 terminals visible at once',
+  'Click me for a greeting!',
+  'Minimize sessions to the footer bar',
+  'File viewer tracks your terminal\'s directory',
+  'Custom themes in Settings > Theme',
 ];
 
 const SPEECH_WORKING = ['On it!', 'Working...', 'Processing...'];
@@ -829,17 +867,71 @@ function robotInit() {
     return;
   }
 
-  // Click interaction
+  // Start at a random spot — disable transition so it doesn't slide from default position
+  robotEl.style.transition = 'none';
+  const overlayWidth = overlay ? overlay.clientWidth : 400;
+  robotEl.style.left = Math.floor(4 + Math.random() * Math.max(100, overlayWidth - 80)) + 'px';
+  // Force layout before re-enabling transition
+  void robotEl.offsetLeft;
+
+  // Click interaction — easter egg on rapid clicks
+  let clickCount = 0;
+  let clickResetTimer = null;
+
   overlay?.addEventListener('click', (e) => {
-    // Only respond if clicking near the mascot
     const rect = robotEl.getBoundingClientRect();
     const dx = e.clientX - (rect.left + rect.width / 2);
     const dy = e.clientY - (rect.top + rect.height / 2);
-    if (Math.abs(dx) < 40 && Math.abs(dy) < 50) {
+    if (Math.abs(dx) > 40 || Math.abs(dy) > 50) return;
+
+    clickCount++;
+    clearTimeout(clickResetTimer);
+    clickResetTimer = setTimeout(() => { clickCount = 0; }, 1500);
+
+    if (clickCount >= 3) {
+      clickCount = 0;
+      clearTimeout(robotTimer);
+      robotClearActivity();
+      // Easter egg: random reaction
+      const reactions = [
+        () => { showSpeech('Whoa whoa whoa!', 3000); robotDoActivity(); },
+        () => { showSpeech('OK OK, I\'m going!', 3000); robotWalk(); },
+        () => { showSpeech('You found a secret!', 4000); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 6000); },
+        () => { showSpeech('Stop poking me!', 3000); robotEl.classList.add('act-bounce'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('Alright, dance break!', 4000); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotWalk(); }, 5000); },
+      ];
+      reactions[Math.floor(Math.random() * reactions.length)]();
+    } else {
       showSpeech(SPEECH_CLICK[Math.floor(Math.random() * SPEECH_CLICK.length)]);
     }
   });
 
+  // If window resizes and robot is off-screen, walk back into view
+  window.addEventListener('resize', () => {
+    if (!robotEl || !overlay) return;
+    const overlayWidth = overlay.clientWidth;
+    const currentLeft = parseInt(robotEl.style.left) || 0;
+    if (currentLeft > overlayWidth - 60) {
+      // Robot is off-screen — walk back in
+      clearTimeout(robotTimer);
+      robotClearActivity();
+      const dest = Math.floor(overlayWidth * 0.5 + Math.random() * (overlayWidth * 0.3));
+      const safeDest = Math.min(dest, overlayWidth - 80);
+      robotFacingLeft = true;
+      robotEl.classList.add('face-left');
+      robotEl.classList.add('walking');
+      const duration = Math.max(2, (currentLeft - safeDest) * 0.04);
+      robotEl.style.transition = `left ${duration}s linear`;
+      robotEl.style.left = safeDest + 'px';
+      robotTimer = setTimeout(() => {
+        robotEl.classList.remove('walking', 'face-left');
+        robotNext();
+      }, duration * 1000);
+    }
+  });
+
+  // Just stand still on startup — the idle hover animation handles the rest
+  // First real action after a long pause
   robotNext();
 }
 
@@ -859,22 +951,28 @@ function toggleRobot(enabled) {
 
 function robotNext() {
   if (!robotEl || robotOverride) return;
-  // Alternate: walk somewhere → do an activity → walk → activity...
-  if (Math.random() < 0.5) {
-    robotWalk();
-  } else {
-    robotDoActivity();
-  }
+  // Long idle pause — robot should mostly just stand still (30-90s)
+  const idlePause = (30 + Math.random() * 60) * 1000;
+  robotTimer = setTimeout(() => {
+    if (!robotEl || robotOverride) return;
+    if (Math.random() < 0.2) {
+      robotWalk();
+    } else {
+      robotDoActivity();
+    }
+  }, idlePause);
 }
 
 function robotWalk() {
   if (robotOverride) return;
   robotClearActivity();
-  robotEl.classList.add('walking');
 
-  // Pick a random destination across full window width
-  const maxX = Math.max(200, window.innerWidth - 80);
-  const dest = Math.floor(Math.random() * maxX);
+  // Pick a random destination within the overlay (which starts after sidebar)
+  const overlay = document.getElementById('robot-overlay');
+  const overlayWidth = overlay ? overlay.clientWidth : window.innerWidth;
+  const minX = 4;
+  const maxX = Math.max(minX + 100, overlayWidth - 80);
+  const dest = Math.floor(minX + Math.random() * (maxX - minX));
   const currentLeft = parseInt(robotEl.style.left) || 4;
   const distance = Math.abs(dest - currentLeft);
   const duration = Math.max(4, distance * 0.08); // ~0.08s per px, min 4s
@@ -883,16 +981,29 @@ function robotWalk() {
   robotFacingLeft = dest < currentLeft;
   robotEl.classList.toggle('face-left', robotFacingLeft);
 
-  // Smooth move via CSS transition
-  robotEl.style.transition = `left ${duration}s linear`;
-  robotEl.style.left = dest + 'px';
-
-  // After arriving, pause briefly then do an activity
+  // Anticipation crouch before walking
+  robotEl.classList.add('walk-anticipate');
   robotTimer = setTimeout(() => {
-    robotEl.classList.remove('walking');
-    // Brief pause (2-4s) standing still before activity
-    robotTimer = setTimeout(() => robotDoActivity(), (2 + Math.random() * 2) * 1000);
-  }, duration * 1000);
+    robotEl.classList.remove('walk-anticipate');
+
+    // Start walking
+    robotEl.classList.add('walking');
+    robotEl.style.transition = `left ${duration}s linear`;
+    robotEl.style.left = dest + 'px';
+
+    // After arriving, settle then do an activity
+    robotTimer = setTimeout(() => {
+      robotEl.classList.remove('walking');
+
+      // Follow-through settle animation
+      robotEl.classList.add('walk-arrive');
+      robotTimer = setTimeout(() => {
+        robotEl.classList.remove('walk-arrive');
+        // Long rest after walking
+        robotTimer = setTimeout(() => robotNext(), (30 + Math.random() * 60) * 1000);
+      }, 300);
+    }, duration * 1000);
+  }, 200);
 }
 
 function robotDoActivity() {
@@ -912,6 +1023,9 @@ function robotDoActivity() {
   if (act.speech) {
     showSpeech(act.speech);
   }
+  if (act.name === 'sleep') {
+    showSpeech('Zzz...');
+  }
 
   // Stay in this activity for its duration, then move on
   const dur = act.duration[0] + Math.random() * (act.duration[1] - act.duration[0]);
@@ -924,7 +1038,7 @@ function robotDoActivity() {
 
 function robotClearActivity() {
   if (!robotEl) return;
-  robotEl.classList.remove('walking', 'face-left');
+  robotEl.classList.remove('walking', 'face-left', 'walk-anticipate', 'walk-arrive');
   for (const act of ACTIVITIES) {
     robotEl.classList.remove(act.cls);
   }
@@ -941,7 +1055,7 @@ function updateMascot(status) {
     robotOverride = 'working';
     clearTimeout(robotTimer);
     robotClearActivity();
-    robotEl.classList.add('working', 'walking');
+    robotEl.classList.add('working');
     showSpeech(SPEECH_WORKING[Math.floor(Math.random() * SPEECH_WORKING.length)]);
   } else if (status === 'WaitingForInput' || status === 'NeedsPermission') {
     robotOverride = 'waiting';
@@ -968,16 +1082,109 @@ function triggerMascotBounce() {
   // no-op now, status changes handled by updateMascot
 }
 
-function showSpeech(text) {
+function showSpeech(text, duration = 3000) {
   const el = document.getElementById('mascot-speech');
   if (!el) return;
   el.textContent = text;
   el.classList.add('visible');
-  setTimeout(() => el.classList.remove('visible'), 3000);
+  setTimeout(() => el.classList.remove('visible'), duration);
 }
 
 function setupMascotSpeech() {
   robotInit();
+  startTipTimer();
+}
+
+let lastTipIndex = -1;
+
+function startTipTimer() {
+  // Show a tip every 3-5 minutes
+  function scheduleTip() {
+    const delay = (3 + Math.random() * 2) * 60 * 1000; // 3-5 min
+    setTimeout(() => {
+      if (localStorage.getItem('ps-robot-enabled') === 'false') {
+        scheduleTip();
+        return;
+      }
+      // Pick a random tip, avoid repeating the last one
+      let idx;
+      do {
+        idx = Math.floor(Math.random() * APP_TIPS.length);
+      } while (idx === lastTipIndex && APP_TIPS.length > 1);
+      lastTipIndex = idx;
+
+      showSpeech('Tip: ' + APP_TIPS[idx], 6000);
+      scheduleTip();
+    }, delay);
+  }
+  scheduleTip();
+}
+
+// --- Welcome Message ---
+
+async function showWelcomeMessage() {
+  if (localStorage.getItem('ps-robot-enabled') === 'false') return;
+
+  // Get the focused session's CWD for project context
+  const session = sessions[focusedIndex];
+  const cwd = session?.cwd;
+
+  let projectName = null;
+  let hint = null;
+
+  if (cwd) {
+    // Extract project name from path
+    const parts = cwd.replace(/\/$/, '').split('/');
+    projectName = parts[parts.length - 1];
+
+    // Try to read Claude memories for this project
+    try {
+      const config = await invoke('read_claude_config', { projectPath: cwd });
+      if (config.project_memory) {
+        hint = extractHint(config.project_memory, projectName);
+      }
+    } catch {}
+  }
+
+  // Build the welcome message
+  if (hint) {
+    showSpeech(hint, 6000);
+  } else if (projectName && projectName !== '~') {
+    showSpeech(`Welcome back to ${projectName}!`, 4000);
+  } else {
+    const greetings = ['Ready to code!', 'Let\'s build something.', 'Standing by.', 'At your service.'];
+    showSpeech(greetings[Math.floor(Math.random() * greetings.length)], 4000);
+  }
+}
+
+function extractHint(memoryContent, projectName) {
+  // Look for actionable context in the memory content
+  const lines = memoryContent.split('\n').filter(l => l.trim());
+
+  // Look for project description or current work items
+  for (const line of lines) {
+    const trimmed = line.replace(/^[-*#>\s]+/, '').trim();
+    if (!trimmed || trimmed.length < 10 || trimmed.length > 80) continue;
+
+    // Skip metadata lines, links, and headers that are just titles
+    if (/^(name:|description:|type:|---|\[.*\]\(.*\))/.test(trimmed)) continue;
+
+    // Look for lines that describe the project or current work
+    if (/stack|built with|uses|running|deploy|TODO|current|working on/i.test(trimmed)) {
+      return trimmed.length > 60 ? trimmed.slice(0, 57) + '...' : trimmed;
+    }
+  }
+
+  // Fall back to first meaningful content line
+  for (const line of lines) {
+    const trimmed = line.replace(/^[-*#>\s]+/, '').trim();
+    if (trimmed.length >= 15 && trimmed.length <= 70 &&
+        !/^(name:|description:|type:|---|\[.*\]\(.*\)|```|#{1,3}\s)/.test(trimmed)) {
+      return trimmed;
+    }
+  }
+
+  return projectName ? `Working on ${projectName}` : null;
 }
 
 // --- Session Persistence ---
@@ -991,7 +1198,6 @@ function saveSessionState() {
       minimized: s.minimized,
     })),
     focused_index: focusedIndex,
-    session_counter: sessionCounter,
   };
   invoke('save_sessions', { json: JSON.stringify(data) }).catch(err => {
     console.warn('Failed to save session state:', err);
@@ -1020,6 +1226,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     requestAnimationFrame(() => fitVisibleTerminals());
   });
 
+  // When file viewer opens, push fresh CWD immediately
+  window.addEventListener('file-viewer-opened', async () => {
+    const session = sessions[focusedIndex];
+    if (!session?.id) return;
+    try {
+      const cwd = await invoke('get_process_cwd', { sessionId: session.id });
+      if (cwd) {
+        session.cwd = cwd;
+        updateFileViewerCwd(cwd);
+      }
+    } catch (err) {
+      console.warn('CWD fetch on viewer open:', err);
+      // Fall back to session's stored CWD
+      if (session.cwd) updateFileViewerCwd(session.cwd);
+    }
+  });
+
+  // Listen for settings changes and apply to idle terminals
+  window.addEventListener('settings-changed', (e) => {
+    pendingTerminalSettings = e.detail;
+    sessions.forEach(s => {
+      if (s.status === 'Idle' || s.status === 'WaitingForInput' || !s.status) {
+        s.terminal.applySettings(pendingTerminalSettings);
+      }
+    });
+  });
+
   // Listen for robot toggle from settings
   window.addEventListener('robot-toggle', (e) => toggleRobot(e.detail));
 
@@ -1038,10 +1271,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (json) {
       const data = JSON.parse(json);
       if (data.version === 1 && data.sessions?.length > 0) {
-        sessionCounter = data.session_counter || 0;
         for (const saved of data.sessions) {
           await createSession(saved.cwd);
           const idx = sessions.length - 1;
+          if (saved.name) {
+            sessions[idx].name = saved.name;
+            sessions[idx].pane.querySelector('.pane-title').textContent = saved.name;
+          }
           if (saved.minimized) {
             sessions[idx].minimized = true;
           }
@@ -1063,5 +1299,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     await createSession('Terminal 1');
   }
 
+  // Welcome message after a brief delay (let CWD resolve)
+  setTimeout(() => showWelcomeMessage(), 1500);
+
   setInterval(updateGitInfo, 5000);
+
+  // Poll CWD for the focused session
+  setInterval(async () => {
+    if (sessions.length === 0) return;
+    const session = sessions[focusedIndex];
+    if (!session?.id) return;
+    try {
+      const cwd = await invoke('get_process_cwd', { sessionId: session.id });
+      if (cwd && cwd !== session.cwd) {
+        session.cwd = cwd;
+        updateFileViewerCwd(cwd);
+        updateGitInfo();
+      }
+    } catch (err) {
+      console.warn('CWD poll error:', err);
+    }
+  }, 2000);
 });

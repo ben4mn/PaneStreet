@@ -15,12 +15,19 @@ export function initFileViewer() {
   });
   document.getElementById('fv-back').addEventListener('click', navigateUp);
   document.getElementById('fv-toggle-view').addEventListener('click', toggleRawMode);
-  document.getElementById('fv-toggle-btn').addEventListener('click', toggleFileViewer);
+  document.getElementById('fv-toggle-btn').addEventListener('click', () => toggleFileViewer());
+  document.getElementById('fv-open-default').addEventListener('click', () => {
+    const target = selectedFile || currentPath;
+    if (target) invoke('open_with_default', { path: target });
+  });
+
+  // Keyboard navigation
+  document.getElementById('file-viewer').addEventListener('keydown', handleFileViewerKeydown);
 }
 
-export function toggleFileViewer() {
+export function toggleFileViewer(latestCwd) {
   if (viewerVisible) hideFileViewer();
-  else showFileViewer(currentPath);
+  else showFileViewer(latestCwd || currentPath);
 }
 
 export function showFileViewer(cwd) {
@@ -32,11 +39,20 @@ export function showFileViewer(cwd) {
   if (cwd && cwd !== currentPath) {
     currentPath = cwd;
     selectedFile = null;
-    showTree();
-  } else if (!currentPath) {
-    currentPath = cwd || null;
-    if (currentPath) showTree();
   }
+
+  // Always render the tree when opening — fetch fresh CWD first if possible
+  if (currentPath) {
+    showTree();
+  } else {
+    const tree = document.getElementById('fv-tree');
+    tree.innerHTML = '<div class="fv-empty">Waiting for terminal directory...</div>';
+    tree.style.display = '';
+    document.getElementById('fv-content').style.display = 'none';
+  }
+
+  // Dispatch event so app.js can push fresh CWD
+  window.dispatchEvent(new CustomEvent('file-viewer-opened'));
 
   // Re-fit terminals after layout change
   requestAnimationFrame(() => {
@@ -91,20 +107,47 @@ function showTree() {
   tree.style.display = '';
   content.style.display = 'none';
   document.getElementById('fv-toggle-view').style.display = 'none';
+  updateOpenButton();
   updatePathDisplay();
   renderDirectory(currentPath, tree, 0);
 }
 
 function updatePathDisplay() {
   const pathEl = document.getElementById('fv-path');
-  if (!currentPath) {
-    pathEl.textContent = '';
-    return;
-  }
-  // Show abbreviated path
-  const home = currentPath.replace(/^\/Users\/[^/]+/, '~');
-  pathEl.textContent = home;
+  pathEl.innerHTML = '';
+  if (!currentPath) return;
+
+  const home = (typeof process !== 'undefined' && process.env?.HOME) || currentPath.match(/^\/Users\/[^/]+/)?.[0] || '';
+  const display = home ? currentPath.replace(home, '~') : currentPath;
+  const parts = display.split('/').filter(Boolean);
+  const fullParts = currentPath.split('/').filter(Boolean);
+
+  parts.forEach((part, i) => {
+    if (i > 0) {
+      const sep = document.createElement('span');
+      sep.className = 'fv-breadcrumb-sep';
+      sep.textContent = ' \u203A ';
+      pathEl.appendChild(sep);
+    }
+    const crumb = document.createElement('span');
+    crumb.className = 'fv-breadcrumb';
+    crumb.textContent = part;
+    crumb.title = '/' + fullParts.slice(0, i + 1).join('/');
+    crumb.addEventListener('click', () => {
+      currentPath = '/' + fullParts.slice(0, i + 1).join('/');
+      selectedFile = null;
+      expandedDirs.clear();
+      updateOpenButton();
+      showTree();
+    });
+    pathEl.appendChild(crumb);
+  });
   pathEl.title = currentPath;
+}
+
+function updateOpenButton() {
+  const btn = document.getElementById('fv-open-default');
+  if (btn) btn.style.display = selectedFile ? '' : 'none';
 }
 
 // --- Directory Tree ---
@@ -187,6 +230,7 @@ async function renderDirectory(path, container, depth) {
           // Update selection styling
           container.closest('#fv-tree').querySelectorAll('.fv-entry').forEach(el => el.classList.remove('selected'));
           row.classList.add('selected');
+          updateOpenButton();
           loadFileContent(entry.path, entry.extension);
         });
 
@@ -391,6 +435,36 @@ function parseMarkdown(text) {
   html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
 
   return html;
+}
+
+function handleFileViewerKeydown(e) {
+  const tree = document.getElementById('fv-tree');
+  if (tree.style.display === 'none') return;
+
+  const entries = Array.from(tree.querySelectorAll('.fv-entry'));
+  if (entries.length === 0) return;
+
+  const selectedIdx = entries.findIndex(el => el.classList.contains('selected'));
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    const next = Math.min(selectedIdx + 1, entries.length - 1);
+    entries.forEach(el => el.classList.remove('selected'));
+    entries[next].classList.add('selected');
+    entries[next].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    const prev = Math.max(selectedIdx - 1, 0);
+    entries.forEach(el => el.classList.remove('selected'));
+    entries[prev].classList.add('selected');
+    entries[prev].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (selectedIdx >= 0) entries[selectedIdx].click();
+  } else if (e.key === 'Backspace') {
+    e.preventDefault();
+    navigateUp();
+  }
 }
 
 function escapeHtml(text) {

@@ -1,18 +1,19 @@
 :root {
   /* Backgrounds */
   --bg-app: #1a1a1a;
-  --bg-sidebar: #1e1e1e;
+  --bg-sidebar: #1c1c1c;
   --bg-pane: #111111;
   --bg-header: #1a1a1a;
   --bg-titlebar: #252525;
   --bg-footer: #1a1a1a;
-  --bg-card: #2a2a2a;
-  --bg-card-active: #2a6df0;
+  --bg-card: #252525;
+  --bg-card-active: var(--accent);
+  --border: rgba(255,255,255,0.1);
 
   /* Text */
-  --text-primary: #cccccc;
-  --text-secondary: #888888;
-  --text-muted: #555555;
+  --text-primary: #d4d4d4;
+  --text-secondary: #999999;
+  --text-muted: #666666;
   --text-bright: #ffffff;
 
   /* Accent */
@@ -75,7 +76,7 @@ html, body {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
   background: linear-gradient(180deg, var(--bg-sidebar) 0%, rgba(0,0,0,0.15) 100%), var(--bg-sidebar);
-  border-right: 0.5px solid #333;
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   padding: 10px;
@@ -172,8 +173,22 @@ html, body {
 #sidebar.collapsed .session-card[data-status="Exited"]          { border-bottom-color: var(--status-exited); }
 
 #sidebar.collapsed .session-card .status-dot {
-  width: 10px;
-  height: 10px;
+  display: none;
+}
+
+#sidebar.collapsed .session-card .session-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  width: 100%;
+  height: 100%;
+}
+
+#sidebar.collapsed .session-card.active .session-badge {
+  color: var(--text-bright);
 }
 
 #sidebar.collapsed #session-list {
@@ -202,12 +217,13 @@ html, body {
 
 #new-session-btn {
   width: 100%;
-  padding: 6px 8px;
+  padding: 8px 10px;
   background: var(--accent);
   color: var(--text-bright);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
+  font-weight: 500;
   font-family: var(--font-ui);
   cursor: pointer;
   transition: opacity 0.15s;
@@ -223,20 +239,27 @@ html, body {
   gap: 4px;
 }
 
+.session-badge {
+  display: none;
+}
+
 .session-card {
-  padding: 7px 8px 7px 10px;
+  padding: 8px 10px 8px 10px;
   background: var(--bg-card);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255,255,255,0.06);
   border-left: 3px solid transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   transition: background 0.15s, border-color 0.2s;
 }
 
 .session-card:hover {
-  background: #333;
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.12);
+  border-left-color: rgba(255,255,255,0.12);
 }
 
 /* Status-based sidebar card borders */
@@ -368,7 +391,7 @@ html, body {
   display: flex;
   flex-direction: column;
   background: var(--bg-pane);
-  border: 0.5px solid #333;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
   min-height: 0;
@@ -398,7 +421,7 @@ html, body {
   align-items: center;
   padding: 0 10px;
   gap: 8px;
-  border-bottom: 0.5px solid #333;
+  border-bottom: 1px solid var(--border);
 }
 
 .pane-header .pane-title {
@@ -445,7 +468,7 @@ html, body {
   height: var(--footer-height);
   min-height: var(--footer-height);
   background: var(--bg-footer);
-  border-top: 0.5px solid #333;
+  border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
   padding: 0 16px;
@@ -479,12 +502,18 @@ html, body {
 #robot-overlay {
   position: fixed;
   bottom: var(--footer-height);
-  left: 0;
+  left: var(--sidebar-width);
   right: 0;
   height: 80px;
   pointer-events: none;
-  z-index: 500;
+  z-index: 10;
   overflow: visible;
+  transition: left 0.25s ease;
+}
+
+/* When sidebar is collapsed — toggled via JS */
+#robot-overlay.sidebar-collapsed {
+  left: 48px;
 }
 
 #robot-overlay.hidden {
@@ -500,12 +529,17 @@ html, body {
   height: 56px;
   cursor: pointer;
   transition: left 10s linear;
+  overflow: visible;
 }
 
-/* --- Always-on ambient (very subtle) --- */
-.robot-eyes { animation: robot-blink 6s ease-in-out infinite; }
-.robot-chest-glow { animation: robot-glow 4s ease-in-out infinite; }
-.robot-antenna { animation: robot-antenna 4s ease-in-out infinite; transform-origin: 14px 5px; }
+#footer-mascot svg {
+  overflow: visible;
+}
+
+/* --- Always-on ambient (very subtle, slow) --- */
+.robot-eyes { animation: robot-blink 8s ease-in-out infinite; }
+.robot-chest-glow { animation: robot-glow 6s ease-in-out infinite; }
+.robot-antenna { animation: robot-antenna 6s ease-in-out infinite; transform-origin: 14px 5px; }
 
 @keyframes robot-blink {
   0%, 46%, 49%, 100% { opacity: 1; }
@@ -521,66 +555,145 @@ html, body {
   70% { transform: rotate(-2deg); }
 }
 
+/* Ground shadow */
+.robot-shadow {
+  opacity: 0.15;
+  transition: transform 0.3s ease;
+}
+
 /* --- Walking mode (applied by JS) --- */
+/* Simple waddle: body bobs, legs alternate slide forward/back, arms counter-swing */
 #footer-mascot.walking .robot-body {
-  animation: walk-bob 1s ease-in-out infinite;
+  animation: walk-bob 0.5s ease-in-out infinite;
   transform-origin: center bottom;
 }
-#footer-mascot.walking .robot-leg-left { animation: walk-step-l 0.7s ease-in-out infinite; }
-#footer-mascot.walking .robot-leg-right { animation: walk-step-r 0.7s ease-in-out infinite; }
+#footer-mascot.walking .robot-leg-left {
+  animation: walk-leg-l 0.5s ease-in-out infinite;
+}
+#footer-mascot.walking .robot-leg-right {
+  animation: walk-leg-r 0.5s ease-in-out infinite;
+}
+#footer-mascot.walking .robot-arm-l {
+  animation: walk-arm-l 0.5s ease-in-out infinite;
+}
+#footer-mascot.walking .robot-arm-r {
+  animation: walk-arm-r 0.5s ease-in-out infinite;
+}
+#footer-mascot.walking .robot-shadow {
+  animation: walk-shadow 0.5s ease-in-out infinite;
+}
 
+/* Body: gentle up-down bob, twice per cycle (once per step) */
 @keyframes walk-bob {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-0.5px); }
+  25% { transform: translateY(-1px); }
+  50% { transform: translateY(0); }
+  75% { transform: translateY(-1px); }
 }
-@keyframes walk-step-l {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-0.7px); }
+/* Left leg slides forward then back (horizontal shift) */
+@keyframes walk-leg-l {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(1.5px); }
+  75% { transform: translateX(-1.5px); }
 }
-@keyframes walk-step-r {
-  0%, 30% { transform: translateY(0); }
-  65% { transform: translateY(-0.7px); }
-  100% { transform: translateY(0); }
+/* Right leg: opposite phase */
+@keyframes walk-leg-r {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-1.5px); }
+  75% { transform: translateX(1.5px); }
+}
+/* Arms swing opposite to legs */
+@keyframes walk-arm-l {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-1px); }
+  75% { transform: translateX(1px); }
+}
+@keyframes walk-arm-r {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(1px); }
+  75% { transform: translateX(-1px); }
+}
+/* Shadow pulses slightly with each step */
+@keyframes walk-shadow {
+  0%, 50%, 100% { transform: scaleX(1); }
+  25%, 75% { transform: scaleX(0.95); }
+}
+
+/* Walk anticipation & follow-through */
+#footer-mascot.walk-anticipate .robot-body {
+  animation: walk-crouch 0.2s ease-out forwards;
+  transform-origin: center bottom;
+}
+@keyframes walk-crouch {
+  0% { transform: scaleY(1) scaleX(1); }
+  100% { transform: scaleY(0.94) scaleX(1.04); }
+}
+#footer-mascot.walk-arrive .robot-body {
+  animation: walk-settle 0.3s ease-out forwards;
+  transform-origin: center bottom;
+}
+@keyframes walk-settle {
+  0% { transform: translateY(-2px); }
+  40% { transform: translateY(1px) scaleY(0.97); }
+  100% { transform: translateY(0) scaleY(1); }
 }
 
 /* Facing left (JS toggles this) */
 #footer-mascot.face-left { transform: scaleX(-1); }
+#footer-mascot.face-left .mascot-speech { transform: translateX(-50%) scaleX(-1); }
+
+/* --- Default idle: gentle rise-and-fall (always on) --- */
+#footer-mascot .robot-body {
+  animation: idle-hover 4s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+@keyframes idle-hover {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1px); }
+}
 
 /* --- Idle activity poses (applied by JS, one at a time) --- */
 
-/* Standing still — just breathing */
-#footer-mascot.act-stand .robot-body {
-  animation: stand-breathe 3s ease-in-out infinite;
-  transform-origin: center bottom;
-}
-@keyframes stand-breathe {
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(1.01); }
-}
+/* Standing still — just the default hover, no extra animation */
 
-/* Looking around — eyes shift */
+/* Looking around — eyes shift with slight head turn */
 #footer-mascot.act-look .robot-eyes {
   animation: look-around 3s ease-in-out infinite;
 }
+#footer-mascot.act-look .robot-head {
+  animation: look-head 3s ease-in-out infinite;
+  transform-origin: 14px 10px;
+}
 @keyframes look-around {
   0%, 100% { transform: translateX(0); }
-  30% { transform: translateX(-1px); }
-  70% { transform: translateX(1px); }
+  30% { transform: translateX(-1.5px); }
+  70% { transform: translateX(1.5px); }
+}
+@keyframes look-head {
+  0%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(-1deg); }
+  70% { transform: rotate(1deg); }
 }
 
-/* Waving — right arm goes up */
+/* Waving — right arm goes up with body counter-sway */
 #footer-mascot.act-wave .robot-arm-r {
-  animation: wave-arm 1s ease-in-out 3;
+  animation: wave-arm 0.7s ease-in-out 5;
   transform-origin: 21.5px 21px;
 }
+#footer-mascot.act-wave .robot-body {
+  animation: wave-body 0.7s ease-in-out 5;
+  transform-origin: center bottom;
+}
 @keyframes wave-arm {
+  0%, 100% { transform: rotate(-15deg); }
+  50% { transform: rotate(-50deg); }
+}
+@keyframes wave-body {
   0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(-30deg); }
-  50% { transform: rotate(-15deg); }
-  75% { transform: rotate(-30deg); }
+  50% { transform: rotate(2deg); }
 }
 
-/* Sleeping — eyes close, lean, antenna droops */
+/* Sleeping — eyes close, deeper lean, antenna droops */
 #footer-mascot.act-sleep .robot-eyes { opacity: 0.05; animation: none; }
 #footer-mascot.act-sleep .robot-body {
   animation: sleep-lean 4s ease-in-out infinite;
@@ -590,16 +703,24 @@ html, body {
   animation: sleep-antenna 4s ease-in-out infinite;
   transform-origin: 14px 5px;
 }
+#footer-mascot.act-sleep .robot-chest-glow { animation-duration: 6s; }
+#footer-mascot.act-sleep .robot-shadow {
+  animation: sleep-shadow 4s ease-in-out infinite;
+}
 @keyframes sleep-lean {
   0%, 100% { transform: rotate(0deg); }
-  50% { transform: rotate(3deg); }
+  50% { transform: rotate(6deg) scaleY(0.98); }
 }
 @keyframes sleep-antenna {
   0%, 100% { transform: rotate(5deg); }
   50% { transform: rotate(8deg); }
 }
+@keyframes sleep-shadow {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(1.1); }
+}
 
-/* Stretching — arms go up */
+/* Stretching — arms go up with body stretch */
 #footer-mascot.act-stretch .robot-arm-l {
   animation: stretch-l 2s ease-in-out 2;
   transform-origin: 6.5px 21px;
@@ -608,76 +729,162 @@ html, body {
   animation: stretch-r 2s ease-in-out 2;
   transform-origin: 21.5px 21px;
 }
+#footer-mascot.act-stretch .robot-body {
+  animation: stretch-body 2s ease-in-out 2;
+  transform-origin: center bottom;
+}
 @keyframes stretch-l {
   0%, 100% { transform: rotate(0deg); }
-  40%, 60% { transform: rotate(25deg); }
+  40%, 60% { transform: rotate(35deg); }
 }
 @keyframes stretch-r {
   0%, 100% { transform: rotate(0deg); }
-  40%, 60% { transform: rotate(-25deg); }
+  40%, 60% { transform: rotate(-35deg); }
+}
+@keyframes stretch-body {
+  0%, 100% { transform: scaleY(1) translateY(0); }
+  40%, 60% { transform: scaleY(1.02) translateY(-1px); }
 }
 
-/* Nodding — gentle head bob */
+/* Nodding — 2-step head bob */
 #footer-mascot.act-nod .robot-body {
   animation: nod 1.2s ease-in-out 3;
   transform-origin: center 16px;
 }
 @keyframes nod {
   0%, 100% { transform: rotate(0deg); }
-  40% { transform: rotate(4deg); }
+  25% { transform: rotate(6deg); }
+  40% { transform: rotate(2deg); }
+  55% { transform: rotate(6deg); }
+  70% { transform: rotate(0deg); }
 }
 
-/* Thinking — slight tilt, antenna perks */
+/* Thinking — tilt with hand to chin, antenna perks */
 #footer-mascot.act-think .robot-body {
-  transform: rotate(-3deg);
+  animation: think-body 3s ease-in-out infinite;
   transform-origin: center bottom;
 }
+#footer-mascot.act-think .robot-arm-l {
+  transform: rotate(30deg) translateY(-2px);
+  transform-origin: 6.5px 21px;
+}
 #footer-mascot.act-think .robot-antenna {
-  animation: think-antenna 2s ease-in-out infinite;
+  animation: think-antenna 1.5s ease-in-out infinite;
   transform-origin: 14px 5px;
 }
+#footer-mascot.act-think .robot-antenna circle {
+  animation: think-antenna-tip 1.5s ease-in-out infinite;
+}
+@keyframes think-body {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(-5deg); }
+}
 @keyframes think-antenna {
-  0%, 100% { transform: rotate(-4deg); }
-  50% { transform: rotate(-6deg); }
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(-12deg); }
+}
+@keyframes think-antenna-tip {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
-/* Dancing — gentle sway */
+/* Dancing — full body sway with arms and legs */
 #footer-mascot.act-dance .robot-body {
   animation: dance-sway 0.8s ease-in-out infinite;
   transform-origin: center bottom;
 }
+#footer-mascot.act-dance .robot-arm-l {
+  animation: dance-arm-l 0.8s ease-in-out infinite;
+  transform-origin: 6.5px 21px;
+}
+#footer-mascot.act-dance .robot-arm-r {
+  animation: dance-arm-r 0.8s ease-in-out infinite;
+  transform-origin: 21.5px 21px;
+}
+#footer-mascot.act-dance .robot-leg-left {
+  animation: dance-leg-l 0.8s ease-in-out infinite;
+}
+#footer-mascot.act-dance .robot-leg-right {
+  animation: dance-leg-r 0.8s ease-in-out infinite;
+}
+#footer-mascot.act-dance .robot-shadow {
+  animation: dance-shadow 0.4s ease-in-out infinite;
+}
 @keyframes dance-sway {
   0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(-3deg); }
-  75% { transform: rotate(3deg); }
+  25% { transform: rotate(-8deg) translateY(-2px); }
+  50% { transform: rotate(0deg) translateY(0); }
+  75% { transform: rotate(8deg) translateY(-2px); }
+}
+@keyframes dance-arm-l {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(20deg); }
+  50% { transform: rotate(0deg); }
+  75% { transform: rotate(-15deg); }
+}
+@keyframes dance-arm-r {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-20deg); }
+  50% { transform: rotate(0deg); }
+  75% { transform: rotate(15deg); }
+}
+@keyframes dance-leg-l {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(1px); }
+}
+@keyframes dance-leg-r {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(-1px); }
+}
+@keyframes dance-shadow {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(0.9); }
 }
 
-/* Typing — arms alternate up/down */
+/* Typing — arms alternate with lean and head tilt */
 #footer-mascot.act-type .robot-arm-l {
-  animation: type-l 0.4s ease-in-out infinite;
+  animation: type-l 0.35s ease-in-out infinite;
   transform-origin: 6.5px 17px;
 }
 #footer-mascot.act-type .robot-arm-r {
-  animation: type-r 0.4s ease-in-out infinite;
+  animation: type-r 0.35s ease-in-out infinite;
   transform-origin: 21.5px 17px;
 }
+#footer-mascot.act-type .robot-body {
+  transform: rotate(2deg);
+  transform-origin: center bottom;
+}
+#footer-mascot.act-type .robot-head {
+  transform: translateY(0.5px);
+}
 @keyframes type-l {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-1px); }
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-2.5px) rotate(5deg); }
 }
 @keyframes type-r {
-  0%, 50% { transform: translateY(0); }
-  75% { transform: translateY(-1px); }
+  0%, 40% { transform: translateY(0) rotate(0deg); }
+  70% { transform: translateY(-2.5px) rotate(-5deg); }
+  100% { transform: translateY(0) rotate(0deg); }
 }
 
-/* Bouncing — little happy hops */
+/* Bouncing — squash & stretch happy hops */
 #footer-mascot.act-bounce .robot-body {
   animation: happy-bounce 0.6s ease-in-out infinite;
   transform-origin: center bottom;
 }
+#footer-mascot.act-bounce .robot-shadow {
+  animation: bounce-shadow 0.6s ease-in-out infinite;
+}
 @keyframes happy-bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
+  0% { transform: scaleY(0.92) scaleX(1.08) translateY(0); }
+  15% { transform: scaleY(1.0) scaleX(1.0) translateY(-1px); }
+  45% { transform: scaleY(1.08) scaleX(0.94) translateY(-6px); }
+  75% { transform: scaleY(1.0) scaleX(1.0) translateY(-1px); }
+  100% { transform: scaleY(0.92) scaleX(1.08) translateY(0); }
+}
+@keyframes bounce-shadow {
+  0%, 100% { transform: scaleX(1.1); opacity: 0.15; }
+  45% { transform: scaleX(0.6); opacity: 0.08; }
 }
 
 /* --- Status overrides (applied by JS alongside activity) --- */
@@ -703,6 +910,9 @@ html, body {
   padding: 4px 10px;
   border-radius: 6px;
   white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;
@@ -756,14 +966,15 @@ html, body {
 
 .form-input {
   width: 100%;
-  padding: 4px 6px;
+  padding: 6px 8px;
   background: var(--bg-pane);
-  border: 0.5px solid #444;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   font-family: var(--font-ui);
   outline: none;
+  transition: border-color 0.15s;
 }
 
 .form-input:focus {
@@ -903,33 +1114,35 @@ html, body {
   margin-top: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-top: 8px;
-  border-top: 0.5px solid #333;
+  gap: 5px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
 
 #sidebar-actions button {
   width: 100%;
-  padding: 6px 8px;
+  padding: 8px 12px;
   background: var(--bg-card);
-  border: none;
-  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   font-family: var(--font-ui);
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 #sidebar-actions button:hover {
-  background: #333;
+  background: rgba(255,255,255,0.06);
   color: var(--text-primary);
+  border-color: rgba(255,255,255,0.15);
 }
 
 #sidebar-actions button.panel-active {
   background: var(--accent);
   color: var(--text-bright);
+  border-color: var(--accent);
 }
 
 /* Config panels */
@@ -956,13 +1169,14 @@ html, body {
 
 .config-back-btn {
   background: var(--bg-card);
-  border: none;
+  border: 1px solid rgba(255,255,255,0.1);
   color: var(--text-secondary);
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--font-size-sm);
   font-family: var(--font-ui);
+  transition: background 0.15s, color 0.15s;
 }
 
 .config-back-btn:hover {
@@ -973,25 +1187,27 @@ html, body {
 /* Settings tabs */
 .settings-tabs {
   display: flex;
-  gap: 0;
-  border-bottom: 0.5px solid #333;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
   margin-bottom: 20px;
 }
 
 .settings-tab {
-  padding: 8px 16px;
+  padding: 8px 18px;
   background: none;
   border: none;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   font-size: var(--font-size-sm);
   font-family: var(--font-ui);
+  font-weight: 500;
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  transition: color 0.15s;
+  transition: color 0.15s, background 0.15s;
 }
 
 .settings-tab:hover {
   color: var(--text-primary);
+  background: rgba(255,255,255,0.03);
 }
 
 .settings-tab.active {
@@ -1005,7 +1221,7 @@ html, body {
   align-items: center;
   justify-content: space-between;
   padding: 10px 0;
-  border-bottom: 0.5px solid #222;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
 }
 
 .setting-label {
@@ -1028,16 +1244,17 @@ html, body {
 .settings-group {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
 .setting-row-stacked {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
+  gap: 8px;
+  padding: 16px 18px;
   background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,0.08);
   border-radius: var(--radius-md);
 }
 
@@ -1064,6 +1281,30 @@ html, body {
   background: var(--accent);
   cursor: pointer;
   border: 2px solid var(--bg-card);
+}
+
+.font-size-number {
+  width: 48px;
+  padding: 3px 6px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--accent-light);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.font-size-number::-webkit-inner-spin-button,
+.font-size-number::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.font-size-number:focus {
+  border-color: var(--accent);
 }
 
 .setting-range-value {
@@ -1759,6 +2000,98 @@ html, body {
 
 .footer-fv-btn.active {
   color: var(--accent-light);
+}
+
+/* Unsaved settings dialog */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialog-box {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  min-width: 320px;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.dialog-title {
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  margin-bottom: 8px;
+  color: var(--text-bright);
+}
+
+.dialog-message {
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  font-size: var(--font-size-sm);
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.dialog-btn {
+  padding: 6px 16px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-sm);
+  transition: opacity 0.15s;
+}
+
+.dialog-btn:hover {
+  opacity: 0.85;
+}
+
+.dialog-btn-save {
+  background: var(--accent);
+  color: white;
+}
+
+.dialog-btn-discard {
+  background: var(--status-exited);
+  color: white;
+}
+
+.dialog-btn-cancel {
+  background: var(--bg-pane);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+/* Breadcrumb navigation */
+.fv-breadcrumb {
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: color 0.15s;
+}
+
+.fv-breadcrumb:hover {
+  color: var(--accent-light);
+  text-decoration: underline;
+}
+
+.fv-breadcrumb:last-child {
+  color: var(--text-primary);
+  cursor: default;
+  text-decoration: none;
+}
+
+.fv-breadcrumb-sep {
+  color: var(--text-muted);
+  font-size: 0.85em;
 }
 
 /* Scrollbar styling */

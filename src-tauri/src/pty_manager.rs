@@ -191,3 +191,43 @@ pub fn kill_pty(session_id: String) -> Result<(), String> {
 
     Ok(())
 }
+
+#[tauri::command]
+pub fn get_process_cwd(session_id: String) -> Result<Option<String>, String> {
+    let map = PTY_MAP
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+
+    let handle = map
+        .get(&session_id)
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    let pid = match handle.child.process_id() {
+        Some(pid) => pid,
+        None => return Err("No PID available for session".to_string()),
+    };
+
+    // On macOS, use lsof to get the CWD of the shell process.
+    // The shell PID from portable_pty is the direct child (login shell).
+    // When the user runs `cd`, the shell's CWD changes and lsof reflects it.
+    let output = std::process::Command::new("lsof")
+        .args(["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"])
+        .output()
+        .map_err(|e| format!("lsof failed for PID {}: {}", pid, e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("lsof returned error for PID {}: {}", pid, stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if let Some(path) = line.strip_prefix('n') {
+            if path.starts_with('/') {
+                return Ok(Some(path.to_string()));
+            }
+        }
+    }
+
+    Err(format!("lsof returned no CWD for PID {}. Output: {}", pid, stdout))
+}

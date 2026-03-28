@@ -31,6 +31,8 @@ pub fn run() {
             file_viewer::read_directory,
             file_viewer::read_file_content,
             file_viewer::open_in_finder,
+            file_viewer::open_with_default,
+            pty_manager::get_process_cwd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

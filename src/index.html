@@ -30,12 +30,13 @@
         <div id="plugins-panel" class="config-panel" style="display:none"></div>
         <div id="mcps-panel" class="config-panel" style="display:none"></div>
         <div id="memory-panel" class="config-panel" style="display:none"></div>
-        <div id="file-viewer" style="display:none">
+        <div id="file-viewer" style="display:none" tabindex="0">
           <div class="file-viewer-header">
             <button id="fv-back" class="fv-nav-btn" title="Go to parent directory">&#8593;</button>
             <span class="file-viewer-path" id="fv-path"></span>
             <div class="file-viewer-actions">
               <button id="fv-toggle-view" class="fv-action-btn" title="Toggle rendered/raw" style="display:none">Raw</button>
+              <button id="fv-open-default" class="fv-action-btn" title="Open with default app" style="display:none">Open</button>
               <button id="fv-finder" class="fv-action-btn" title="Open in Finder">Finder</button>
               <button id="fv-close" class="fv-action-btn" title="Close">&times;</button>
             </div>
@@ -64,19 +65,21 @@
             <circle cx="14" cy="1.5" r="1.5" fill="var(--accent)"/>
           </g>
           <!-- Head -->
-          <rect x="7" y="5" width="14" height="10" rx="3" fill="var(--text-secondary)"/>
-          <rect x="7" y="5" width="14" height="10" rx="3" stroke="var(--text-muted)" stroke-width="0.5"/>
-          <!-- Eyes -->
-          <g class="robot-eyes">
-            <circle cx="11" cy="10" r="2" fill="#111"/>
-            <circle cx="11" cy="9.5" r="1.2" fill="var(--accent)"/>
-            <circle cx="10.3" cy="9" r="0.5" fill="#fff" opacity="0.7"/>
-            <circle cx="17" cy="10" r="2" fill="#111"/>
-            <circle cx="17" cy="9.5" r="1.2" fill="var(--accent)"/>
-            <circle cx="16.3" cy="9" r="0.5" fill="#fff" opacity="0.7"/>
+          <g class="robot-head">
+            <rect x="7" y="5" width="14" height="10" rx="3" fill="var(--text-secondary)"/>
+            <rect x="7" y="5" width="14" height="10" rx="3" stroke="var(--text-muted)" stroke-width="0.5"/>
+            <!-- Eyes -->
+            <g class="robot-eyes">
+              <circle cx="11" cy="10" r="2" fill="#111"/>
+              <circle cx="11" cy="9.5" r="1.2" fill="var(--accent)"/>
+              <circle cx="10.3" cy="9" r="0.5" fill="#fff" opacity="0.7"/>
+              <circle cx="17" cy="10" r="2" fill="#111"/>
+              <circle cx="17" cy="9.5" r="1.2" fill="var(--accent)"/>
+              <circle cx="16.3" cy="9" r="0.5" fill="#fff" opacity="0.7"/>
+            </g>
+            <!-- Mouth -->
+            <path d="M11 13 Q14 15 17 13" stroke="var(--text-muted)" stroke-width="0.8" fill="none" stroke-linecap="round"/>
           </g>
-          <!-- Mouth -->
-          <path d="M11 13 Q14 15 17 13" stroke="var(--text-muted)" stroke-width="0.8" fill="none" stroke-linecap="round"/>
           <!-- Body -->
           <rect x="9" y="16" width="10" height="6" rx="2" fill="var(--text-muted)"/>
           <!-- Chest light -->
@@ -94,6 +97,7 @@
             <rect x="14" y="25" width="5" height="2" rx="1" fill="var(--text-secondary)"/>
           </g>
         </g>
+        <ellipse class="robot-shadow" cx="14" cy="27" rx="8" ry="1.5" fill="rgba(0,0,0,0.15)"/>
       </svg>
     </span>
   </div>

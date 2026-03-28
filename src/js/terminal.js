@@ -79,6 +79,13 @@ export class TerminalSession {
     this.term.options.theme = { ...this.term.options.theme, ...themeColors };
   }
 
+  applySettings(settings) {
+    if (settings.fontSize !== undefined) {
+      this.term.options.fontSize = settings.fontSize;
+    }
+    this.fit();
+  }
+
   onOutput(callback) {
     this.onOutputCallback = callback;
   }

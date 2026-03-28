@@ -2,6 +2,8 @@ const { invoke } = window.__TAURI__.core;
 
 let activePanel = null;
 let onHideCallback = null;
+let settingsDirty = false;
+let savedSettingsSnapshot = {};
 
 // --- Panel Switching ---
 
@@ -10,6 +12,25 @@ export function setOnHide(callback) {
 }
 
 export function showPanel(panelName) {
+  // Check for unsaved settings when switching away
+  if (settingsDirty && activePanel === 'settings' && panelName !== 'settings') {
+    showUnsavedDialog(
+      () => {
+        document.getElementById('general-save')?.click();
+        settingsDirty = false;
+        doShowPanel(panelName);
+      },
+      () => {
+        settingsDirty = false;
+        doShowPanel(panelName);
+      }
+    );
+    return;
+  }
+  doShowPanel(panelName);
+}
+
+function doShowPanel(panelName) {
   document.getElementById('pane-grid').style.display = 'none';
   document.getElementById('file-viewer').style.display = 'none';
   document.querySelectorAll('.config-panel').forEach(p => p.style.display = 'none');
@@ -32,9 +53,26 @@ export function showPanel(panelName) {
 }
 
 export function hidePanel() {
+  if (settingsDirty && activePanel === 'settings') {
+    showUnsavedDialog(
+      () => {
+        document.getElementById('general-save')?.click();
+        settingsDirty = false;
+        doHidePanel();
+      },
+      () => {
+        settingsDirty = false;
+        doHidePanel();
+      }
+    );
+    return;
+  }
+  doHidePanel();
+}
+
+function doHidePanel() {
   document.querySelectorAll('.config-panel').forEach(p => p.style.display = 'none');
   document.getElementById('pane-grid').style.display = '';
-  // Restore file viewer if it was visible
   if (document.getElementById('fv-toggle-btn')?.classList.contains('active')) {
     document.getElementById('file-viewer').style.display = 'flex';
   }
@@ -50,6 +88,68 @@ export function togglePanel(panelName) {
 
 export function isAnyPanelActive() {
   return activePanel !== null;
+}
+
+// --- Unsaved Settings Dialog ---
+
+function captureSettingsSnapshot() {
+  return {
+    fontSize: localStorage.getItem('ps-font-size') || '14',
+    shell: localStorage.getItem('ps-shell') || '',
+    defaultDir: localStorage.getItem('ps-default-dir') || '',
+    gitShowBranch: localStorage.getItem('ps-git-show-branch') ?? 'true',
+    gitShowWorktree: localStorage.getItem('ps-git-show-worktree') ?? 'true',
+    gitShowDirty: localStorage.getItem('ps-git-show-dirty') ?? 'true',
+    gitPoll: localStorage.getItem('ps-git-poll') || '5',
+    notifications: localStorage.getItem('ps-notifications') ?? 'true',
+    robotEnabled: localStorage.getItem('ps-robot-enabled') ?? 'true',
+  };
+}
+
+function checkSettingsDirty() {
+  const container = document.getElementById('settings-tab-content');
+  if (!container || currentSettingsTab !== 'general') return false;
+  const current = {
+    fontSize: container.querySelector('#pref-font-size')?.value,
+    shell: container.querySelector('#pref-shell')?.value || '',
+    defaultDir: container.querySelector('#pref-default-dir')?.value || '',
+    gitShowBranch: String(container.querySelector('#pref-git-branch')?.checked ?? true),
+    gitShowWorktree: String(container.querySelector('#pref-git-worktree')?.checked ?? true),
+    gitShowDirty: String(container.querySelector('#pref-git-dirty')?.checked ?? true),
+    gitPoll: container.querySelector('#pref-git-poll')?.value || '5',
+    notifications: String(container.querySelector('#pref-notifications')?.checked ?? true),
+    robotEnabled: String(container.querySelector('#pref-robot')?.checked ?? true),
+  };
+  return JSON.stringify(current) !== JSON.stringify(savedSettingsSnapshot);
+}
+
+function attachDirtyListeners(container) {
+  const fields = container.querySelectorAll('input, select');
+  fields.forEach(field => {
+    field.addEventListener('input', () => { settingsDirty = checkSettingsDirty(); });
+    field.addEventListener('change', () => { settingsDirty = checkSettingsDirty(); });
+  });
+}
+
+function showUnsavedDialog(onSave, onDiscard) {
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.innerHTML = `
+    <div class="dialog-box">
+      <div class="dialog-title">Unsaved Changes</div>
+      <div class="dialog-message">You have unsaved settings changes.</div>
+      <div class="dialog-actions">
+        <button class="dialog-btn dialog-btn-cancel">Cancel</button>
+        <button class="dialog-btn dialog-btn-discard">Discard</button>
+        <button class="dialog-btn dialog-btn-save">Save & Close</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('.dialog-btn-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('.dialog-btn-discard').onclick = () => { overlay.remove(); onDiscard(); };
+  overlay.querySelector('.dialog-btn-save').onclick = () => { overlay.remove(); onSave(); };
 }
 
 // --- Settings Panel ---
@@ -76,14 +176,32 @@ async function renderSettingsPanel() {
 
   panel.querySelectorAll('.settings-tab').forEach(tab => {
     tab.onclick = () => {
-      currentSettingsTab = tab.dataset.tab;
-      panel.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      renderSettingsTab(currentSettingsTab);
+      if (settingsDirty && currentSettingsTab === 'general') {
+        showUnsavedDialog(
+          () => {
+            document.getElementById('general-save')?.click();
+            settingsDirty = false;
+            switchToTab(tab.dataset.tab, panel);
+          },
+          () => {
+            settingsDirty = false;
+            switchToTab(tab.dataset.tab, panel);
+          }
+        );
+        return;
+      }
+      switchToTab(tab.dataset.tab, panel);
     };
   });
 
   renderSettingsTab(currentSettingsTab);
+}
+
+function switchToTab(tabName, panel) {
+  currentSettingsTab = tabName;
+  panel.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+  panel.querySelector(`.settings-tab[data-tab="${tabName}"]`)?.classList.add('active');
+  renderSettingsTab(tabName);
 }
 
 async function renderSettingsTab(tab) {
@@ -108,7 +226,8 @@ async function renderSettingsTab(tab) {
           <div class="setting-description">Size in pixels for terminal text</div>
           <div class="setting-control">
             <input type="range" id="pref-font-size" min="10" max="24" value="${fontSize}" class="setting-range" />
-            <span class="setting-range-value" id="font-size-value">${fontSize}px</span>
+            <input type="number" id="font-size-input" min="10" max="24" value="${fontSize}" class="font-size-number" />
+            <span class="setting-range-value">px</span>
           </div>
           <div class="font-preview" id="font-preview" style="font-size:${fontSize}px">
             The quick brown fox jumps over the lazy dog<br>
@@ -220,13 +339,18 @@ async function renderSettingsTab(tab) {
       <span class="settings-save-msg" id="general-msg"></span>
     `;
 
-    // Font size range with live preview
+    // Font size range + number input with live preview
     const rangeEl = container.querySelector('#pref-font-size');
-    const valueEl = container.querySelector('#font-size-value');
+    const numberEl = container.querySelector('#font-size-input');
     const previewEl = container.querySelector('#font-preview');
     rangeEl.addEventListener('input', () => {
-      valueEl.textContent = rangeEl.value + 'px';
+      numberEl.value = rangeEl.value;
       previewEl.style.fontSize = rangeEl.value + 'px';
+    });
+    numberEl.addEventListener('input', () => {
+      const val = Math.min(24, Math.max(10, parseInt(numberEl.value) || 14));
+      rangeEl.value = val;
+      previewEl.style.fontSize = val + 'px';
     });
 
     // Git poll interval range
@@ -265,11 +389,21 @@ async function renderSettingsTab(tab) {
       const robotChecked = container.querySelector('#pref-robot').checked;
       localStorage.setItem('ps-robot-enabled', robotChecked);
       window.dispatchEvent(new CustomEvent('robot-toggle', { detail: robotChecked }));
+      window.dispatchEvent(new CustomEvent('settings-changed', {
+        detail: { fontSize: parseInt(rangeEl.value) }
+      }));
+      settingsDirty = false;
+      savedSettingsSnapshot = captureSettingsSnapshot();
       const msg = container.querySelector('#general-msg');
       msg.textContent = 'Saved! Settings applied.';
       msg.style.color = 'var(--status-idle)';
       setTimeout(() => { msg.textContent = ''; }, 3000);
     };
+
+    // Track dirty state
+    savedSettingsSnapshot = captureSettingsSnapshot();
+    settingsDirty = false;
+    attachDirtyListeners(container);
 
   } else if (tab === 'auth') {
     container.innerHTML = '<div class="empty-state">Loading...</div>';
