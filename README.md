@@ -42,19 +42,32 @@ No config files. No arcane keybindings to memorize. Just open it and start worki
 ### Terminal Management
 - **Multi-pane layouts** — Auto-grid, freeform drag-and-drop, or edge-snap split modes
 - **GPU-accelerated rendering** — Powered by xterm.js with WebGL
-- **Session persistence** — Your layout survives restarts
+- **Session persistence** — Layout and scrollback history survive restarts
 - **Process status detection** — Know what's running in each pane at a glance
+- **Directional navigation** — Move between panes with `⌘ ⌥ Arrow` keys
 
 ### Window Management
 - **Three layout modes** — Auto-grid for quick setups, freeform for full control, snap-to-edge for tiling
 - **Maximize / minimize panes** — Focus on one task, restore when ready
 - **Minimized pane pills** — Quick access to backgrounded terminals in the footer
 
+### Notifications & Monitoring
+- **Notification sidebar** — Slide-in panel showing terminal alerts (waiting for input, needs permission, exited)
+- **Notification rings** — Pulsing glow on unfocused panes that need attention
+- **Sidebar metadata** — CWD, listening ports, and PR status shown per session
+- **OSC notification support** — Handles OSC 9, 99, and 777 terminal notifications
+- **Native desktop notifications** — Per-status toggle with sound control
+
 ### File Browser
 - **Built-in file viewer** — Browse directories without leaving the app
 - **CWD tracking** — File browser follows your terminal's working directory
 - **File preview** — Peek at file contents inline
 - **Open in Finder** — One click to jump to the file system
+
+### Socket API
+- **Unix socket server** — Control PaneStreet from external scripts and CLI tools
+- **Commands** — List sessions, write to terminals, send notifications, focus sessions
+- **CLI tool included** — `cli/panestreet` script for quick terminal access
 
 ### Claude AI Integration
 - **Plugin viewer** — See installed Claude plugins with version and scope info
@@ -66,7 +79,6 @@ No config files. No arcane keybindings to memorize. Just open it and start worki
 - **16 built-in themes** — Dark, Midnight Blue, Dracula, Nord, Solarized Dark, Gruvbox Dark, Tokyo Night, One Dark, Catppuccin Mocha, Rose Pine, Kanagawa, Everforest, Synthwave 84, Ayu Dark, Horizon, Moonlight
 - **Custom themes** — Full color editor for every UI and terminal color
 - **Rebindable keyboard shortcuts** — Customize every shortcut with conflict detection
-- **Native notifications** — Per-status toggle with sound control
 
 <p align="center">
   <img src="docs/screenshots/themes.png" alt="PaneStreet themes — Dracula, Nord, Synthwave 84" width="800">
@@ -120,6 +132,8 @@ All shortcuts are rebindable in **Settings → Keyboard Shortcuts**.
 | Toggle Layout Mode | `⇧ ⌘ G` |
 | Previous Pane | `⇧ ⌘ [` |
 | Next Pane | `⇧ ⌘ ]` |
+| Navigate Up/Down/Left/Right | `⌘ ⌥ Arrow` |
+| Notifications | `⌘ I` |
 | Switch to Pane 1–9 | `⌘ 1` – `⌘ 9` |
 | Close Panel / Overlay | `Escape` |
 
@@ -152,8 +166,10 @@ PaneStreet/
 │       ├── config_reader.rs # Claude config/plugin/MCP reader
 │       ├── worktree_manager.rs # Git operations
 │       ├── status_detector.rs  # Process status detection
+│       ├── socket_server.rs    # Unix socket API for external control
 │       ├── file_viewer.rs  # Directory & file reading
 │       └── auth_manager.rs # Keyring-based API key storage
+├── cli/                    # CLI tool for socket API
 └── docs/                   # GitHub Pages site
 ```
 
