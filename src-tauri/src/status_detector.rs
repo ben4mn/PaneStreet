@@ -80,6 +80,15 @@ pub fn unregister_session(session_id: &str) {
     }
 }
 
+pub fn get_status(session_id: &str) -> String {
+    if let Ok(map) = STATUS_MAP.lock() {
+        if let Some(state) = map.get(session_id) {
+            return state.current.as_str().to_string();
+        }
+    }
+    "Unknown".to_string()
+}
+
 /// Called from the PTY read thread with each chunk of output.
 /// Returns Some(new_status) if the status changed.
 pub fn on_output(session_id: &str, data: &[u8]) -> Option<SessionStatus> {

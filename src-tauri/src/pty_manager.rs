@@ -21,6 +21,14 @@ pub struct PtyOutput {
     data: Vec<u8>,
 }
 
+/// List all active session IDs (used by socket API)
+pub fn list_sessions() -> Vec<String> {
+    match PTY_MAP.lock() {
+        Ok(map) => map.keys().cloned().collect(),
+        Err(_) => vec![],
+    }
+}
+
 #[tauri::command]
 pub fn spawn_pty(
     app: tauri::AppHandle,
@@ -230,4 +238,75 @@ pub fn get_process_cwd(session_id: String) -> Result<Option<String>, String> {
     }
 
     Err(format!("lsof returned no CWD for PID {}. Output: {}", pid, stdout))
+}
+
+#[tauri::command]
+pub fn get_listening_ports(session_id: String) -> Result<Vec<u16>, String> {
+    let map = PTY_MAP
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+
+    let handle = map
+        .get(&session_id)
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    let pid = match handle.child.process_id() {
+        Some(pid) => pid,
+        None => return Ok(vec![]),
+    };
+
+    // Use lsof to find TCP LISTEN ports for the shell process and its children
+    let output = std::process::Command::new("lsof")
+        .args(["-a", "-p", &pid.to_string(), "-i", "-sTCP:LISTEN", "-Fn"])
+        .output();
+
+    let output = match output {
+        Ok(o) => o,
+        Err(_) => return Ok(vec![]),
+    };
+
+    if !output.status.success() {
+        return Ok(vec![]);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut ports = Vec::new();
+    for line in stdout.lines() {
+        if let Some(name) = line.strip_prefix('n') {
+            // Format: *:PORT or HOST:PORT
+            if let Some(port_str) = name.rsplit(':').next() {
+                if let Ok(port) = port_str.parse::<u16>() {
+                    if !ports.contains(&port) {
+                        ports.push(port);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(ports)
+}
+
+#[tauri::command]
+pub fn get_pr_status(cwd: String) -> Result<Option<serde_json::Value>, String> {
+    // Shell out to gh CLI for PR status
+    let output = std::process::Command::new("gh")
+        .args(["pr", "view", "--json", "number,title,state,url"])
+        .current_dir(&cwd)
+        .output();
+
+    let output = match output {
+        Ok(o) => o,
+        Err(_) => return Ok(None), // gh not installed or not available
+    };
+
+    if !output.status.success() {
+        return Ok(None); // No PR or not in a git repo
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    match serde_json::from_str::<serde_json::Value>(&stdout) {
+        Ok(v) => Ok(Some(v)),
+        Err(_) => Ok(None),
+    }
 }

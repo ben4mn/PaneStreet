@@ -2,6 +2,7 @@ mod auth_manager;
 mod config_reader;
 mod file_viewer;
 mod pty_manager;
+mod socket_server;
 mod status_detector;
 mod worktree_manager;
 
@@ -11,6 +12,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            socket_server::start(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             pty_manager::spawn_pty,
             pty_manager::write_to_pty,
@@ -35,6 +40,8 @@ pub fn run() {
             file_viewer::open_in_finder,
             file_viewer::open_with_default,
             pty_manager::get_process_cwd,
+            pty_manager::get_listening_ports,
+            pty_manager::get_pr_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

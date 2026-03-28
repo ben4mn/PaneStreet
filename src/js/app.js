@@ -769,6 +769,10 @@ function setFocus(index) {
 
   sessions.forEach((s, i) => {
     s.pane.classList.toggle('focused', i === index);
+    // Dismiss notification ring on the newly focused pane
+    if (i === index) {
+      s.pane.classList.remove('notify-ring');
+    }
   });
 
   // Z-index management in freeform mode
@@ -779,6 +783,7 @@ function setFocus(index) {
 
   document.querySelectorAll('.session-card').forEach((c, i) => {
     c.classList.toggle('active', i === index);
+    if (i === index) c.classList.remove('notify-badge');
   });
 
   sessions[index].terminal.focus();
@@ -786,6 +791,61 @@ function setFocus(index) {
   updateMascot(sessions[index].status || 'Idle');
   updateFileViewerCwd(sessions[index].cwd);
   setFocusedCwd(sessions[index].cwd);
+}
+
+function navigateDirection(direction) {
+  if (sessions.length <= 1) return;
+  if (maximizedIndex !== null) return;
+
+  const visible = sessions.filter(s => !s.minimized);
+  if (visible.length <= 1) return;
+
+  const current = sessions[focusedIndex];
+  if (!current) return;
+
+  const currentRect = current.pane.getBoundingClientRect();
+  const cx = currentRect.left + currentRect.width / 2;
+  const cy = currentRect.top + currentRect.height / 2;
+
+  let bestIdx = -1;
+  let bestDist = Infinity;
+
+  for (let i = 0; i < sessions.length; i++) {
+    if (i === focusedIndex || sessions[i].minimized) continue;
+
+    const rect = sessions[i].pane.getBoundingClientRect();
+    const px = rect.left + rect.width / 2;
+    const py = rect.top + rect.height / 2;
+    const dx = px - cx;
+    const dy = py - cy;
+
+    // Check if this pane is in the correct direction
+    let valid = false;
+    switch (direction) {
+      case 'up':    valid = dy < -10; break;
+      case 'down':  valid = dy > 10;  break;
+      case 'left':  valid = dx < -10; break;
+      case 'right': valid = dx > 10;  break;
+    }
+    if (!valid) continue;
+
+    // Use weighted distance: primary axis is more important
+    let dist;
+    if (direction === 'up' || direction === 'down') {
+      dist = Math.abs(dy) + Math.abs(dx) * 2; // Penalize off-axis
+    } else {
+      dist = Math.abs(dx) + Math.abs(dy) * 2;
+    }
+
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+
+  if (bestIdx >= 0) {
+    setFocus(bestIdx);
+  }
 }
 
 function focusNextVisible(fromIndex, direction) {
@@ -895,7 +955,7 @@ function createPane(name) {
 
 // --- Session Lifecycle ---
 
-async function createSession(restoreCwd) {
+async function createSession(restoreCwd, restoreScrollback) {
   const sessionName = `Terminal ${nextTerminalNumber()}`;
 
   // Cap at 6 visible — auto-minimize oldest visible if needed
@@ -913,6 +973,11 @@ async function createSession(restoreCwd) {
   terminal.open();
 
   const effectiveCwd = restoreCwd || localStorage.getItem('ps-default-dir') || null;
+
+  // Restore scrollback content before connecting PTY
+  if (restoreScrollback) {
+    terminal.restoreScrollback(restoreScrollback);
+  }
 
   const sessionId = await terminal.connect(effectiveCwd);
 
@@ -1176,6 +1241,35 @@ function addSessionToSidebar(name, index, minimized) {
   nameEl.className = 'session-name';
   nameEl.textContent = name;
 
+  // Metadata container (CWD, ports, PR)
+  const meta = document.createElement('div');
+  meta.className = 'session-meta';
+  meta.appendChild(nameEl);
+
+  // CWD row
+  const session = sessions[index];
+  if (session?.cwd) {
+    const cwdRow = document.createElement('div');
+    cwdRow.className = 'session-meta-row session-cwd';
+    const parts = session.cwd.replace(/\/$/, '').split('/');
+    const short = parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : session.cwd;
+    cwdRow.textContent = short;
+    cwdRow.title = session.cwd;
+    meta.appendChild(cwdRow);
+  }
+
+  // Ports row (populated async)
+  const portsRow = document.createElement('div');
+  portsRow.className = 'session-meta-row session-ports';
+  portsRow.style.display = 'none';
+  meta.appendChild(portsRow);
+
+  // PR status row (populated async)
+  const prRow = document.createElement('div');
+  prRow.className = 'session-meta-row session-pr';
+  prRow.style.display = 'none';
+  meta.appendChild(prRow);
+
   // Shortcut badge (⌘1 through ⌘9)
   const shortcut = document.createElement('span');
   shortcut.className = 'session-shortcut';
@@ -1188,7 +1282,7 @@ function addSessionToSidebar(name, index, minimized) {
   badge.textContent = index + 1;
 
   card.appendChild(dot);
-  card.appendChild(nameEl);
+  card.appendChild(meta);
   card.appendChild(shortcut);
   card.appendChild(badge);
 
@@ -1277,6 +1371,53 @@ function reorderSession(fromIdx, toIdx) {
   updateGridLayout();
   updateFooterPills();
   saveSessionState();
+}
+
+function updateSidebarMeta() {
+  const cards = document.querySelectorAll('.session-card');
+  sessions.forEach((s, i) => {
+    const card = cards[i];
+    if (!card) return;
+
+    // Update CWD
+    const cwdEl = card.querySelector('.session-cwd');
+    if (cwdEl && s.cwd) {
+      const parts = s.cwd.replace(/\/$/, '').split('/');
+      const short = parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : s.cwd;
+      cwdEl.textContent = short;
+      cwdEl.title = s.cwd;
+      cwdEl.style.display = '';
+    } else if (cwdEl) {
+      cwdEl.style.display = 'none';
+    }
+
+    // Update ports
+    const portsEl = card.querySelector('.session-ports');
+    if (portsEl) {
+      const ports = s._ports || [];
+      if (ports.length > 0) {
+        portsEl.innerHTML = ports.map(p => `<span class="session-port-badge">:${p}</span>`).join(' ');
+        portsEl.style.display = '';
+      } else {
+        portsEl.style.display = 'none';
+      }
+    }
+
+    // Update PR status
+    const prEl = card.querySelector('.session-pr');
+    if (prEl) {
+      const pr = s._pr;
+      if (pr) {
+        const state = pr.state || '';
+        const num = pr.number || '';
+        const cls = state === 'MERGED' ? 'pr-merged' : state === 'CLOSED' ? 'pr-closed' : '';
+        prEl.innerHTML = `<span class="session-pr-badge ${cls}">#${num} ${state.toLowerCase()}</span>`;
+        prEl.style.display = '';
+      } else {
+        prEl.style.display = 'none';
+      }
+    }
+  });
 }
 
 // --- New Session ---
@@ -1515,10 +1656,15 @@ function setupShortcuts() {
     'layout-mode':    { key: 'g',       meta: true,  shift: true  },
     'prev-pane':      { key: '[',       meta: true,  shift: true  },
     'next-pane':      { key: ']',       meta: true,  shift: true  },
+    'notifications':  { key: 'i',       meta: true,  shift: false },
+    'nav-up':         { key: 'ArrowUp',    meta: true,  shift: false, alt: true },
+    'nav-down':       { key: 'ArrowDown',  meta: true,  shift: false, alt: true },
+    'nav-left':       { key: 'ArrowLeft',  meta: true,  shift: false, alt: true },
+    'nav-right':      { key: 'ArrowRight', meta: true,  shift: false, alt: true },
   };
 
   const ACTIONS = {
-    'close-panel':    () => { if (isAnyPanelActive()) hidePanel(); else if (isFileViewerVisible()) hideFileViewer(); else return false; return true; },
+    'close-panel':    () => { if (notifPanelVisible) { hideNotificationPanel(); return true; } if (isAnyPanelActive()) hidePanel(); else if (isFileViewerVisible()) hideFileViewer(); else return false; return true; },
     'settings':       () => { togglePanel('settings'); return true; },
     'sidebar-toggle': () => { document.getElementById('sidebar-toggle').click(); return true; },
     'file-viewer':    () => { toggleFileViewer(sessions[focusedIndex]?.cwd); return true; },
@@ -1530,6 +1676,11 @@ function setupShortcuts() {
     'layout-mode':    () => { toggleLayoutMode(); return true; },
     'prev-pane':      () => { if (isAnyPanelActive()) hidePanel(); focusNextVisible(focusedIndex, -1); return true; },
     'next-pane':      () => { if (isAnyPanelActive()) hidePanel(); focusNextVisible(focusedIndex, 1); return true; },
+    'notifications':  () => { toggleNotificationPanel(); return true; },
+    'nav-up':         () => { navigateDirection('up'); return true; },
+    'nav-down':       () => { navigateDirection('down'); return true; },
+    'nav-left':       () => { navigateDirection('left'); return true; },
+    'nav-right':      () => { navigateDirection('right'); return true; },
   };
 
   document.addEventListener('keydown', (e) => {
@@ -1553,7 +1704,8 @@ function setupShortcuts() {
       const binding = bindings[id] || DEFAULTS[id];
       if (!binding) continue;
       const keyLower = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-      if (keyLower === binding.key && e.metaKey === binding.meta && e.shiftKey === binding.shift) {
+      const altMatch = binding.alt ? e.altKey : !e.altKey;
+      if (keyLower === binding.key && e.metaKey === binding.meta && e.shiftKey === binding.shift && altMatch) {
         e.preventDefault();
         if (action() !== false) return;
       }
@@ -1564,6 +1716,109 @@ function setupShortcuts() {
   window.addEventListener('shortcuts-changed', () => {
     // Bindings are read fresh on each keydown, so no action needed
   });
+}
+
+// --- Notification History ---
+
+const notificationHistory = [];
+let unreadNotificationCount = 0;
+
+function addNotification(sessionName, status, sessionIndex) {
+  notificationHistory.unshift({
+    sessionName,
+    status,
+    sessionIndex,
+    timestamp: Date.now(),
+  });
+  // Cap at 100 entries
+  if (notificationHistory.length > 100) notificationHistory.length = 100;
+  unreadNotificationCount++;
+  updateNotificationBadge();
+}
+
+function updateNotificationBadge() {
+  const badge = document.getElementById('notification-count-badge');
+  if (!badge) return;
+  if (unreadNotificationCount > 0) {
+    badge.textContent = unreadNotificationCount > 99 ? '99+' : unreadNotificationCount;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+let notifPanelVisible = false;
+
+function renderNotificationPanel() {
+  const content = document.getElementById('notif-content');
+  if (!content) return;
+
+  if (notificationHistory.length === 0) {
+    content.innerHTML = '<p style="color:var(--text-muted);font-size:var(--font-size-sm);padding:4px;">No notifications yet. Alerts appear here when terminals need attention.</p>';
+    return;
+  }
+
+  const items = notificationHistory.map((n, i) => {
+    const time = new Date(n.timestamp);
+    const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const statusClass = n.status.startsWith('OSC:') ? 'WaitingForInput' : n.status;
+    const statusLabel = n.status.startsWith('OSC:') ? n.status : {
+      WaitingForInput: 'Waiting for input',
+      NeedsPermission: 'Needs permission',
+      Exited: 'Exited',
+    }[n.status] || n.status;
+    return `<div class="notif-item" data-index="${n.sessionIndex}">
+      <span class="notif-dot" style="background:var(--status-${statusClass === 'WaitingForInput' || statusClass === 'NeedsPermission' ? 'waiting' : statusClass === 'Exited' ? 'exited' : 'working'})"></span>
+      <span class="notif-session">${n.sessionName}</span>
+      <span class="notif-status">${statusLabel}</span>
+      <span class="notif-time">${timeStr}</span>
+    </div>`;
+  }).join('');
+
+  content.innerHTML = `<div class="notif-list">${items}</div>`;
+
+  // Click to jump to session
+  content.querySelectorAll('.notif-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const idx = parseInt(item.dataset.index);
+      if (idx >= 0 && idx < sessions.length) {
+        hideNotificationPanel();
+        if (sessions[idx].minimized) restoreSession(idx);
+        else setFocus(idx);
+      }
+    });
+  });
+}
+
+function showNotificationPanel() {
+  const panel = document.getElementById('notification-panel');
+  panel.classList.add('closing');
+  panel.style.display = 'flex';
+  panel.offsetHeight; // force reflow
+  panel.classList.remove('closing');
+  notifPanelVisible = true;
+  document.getElementById('notification-toggle-btn').classList.add('active');
+  unreadNotificationCount = 0;
+  updateNotificationBadge();
+  renderNotificationPanel();
+}
+
+function hideNotificationPanel() {
+  const panel = document.getElementById('notification-panel');
+  notifPanelVisible = false;
+  document.getElementById('notification-toggle-btn').classList.remove('active');
+  panel.classList.add('closing');
+  const onEnd = () => {
+    panel.removeEventListener('transitionend', onEnd);
+    if (!notifPanelVisible) panel.style.display = 'none';
+  };
+  panel.addEventListener('transitionend', onEnd);
+  setTimeout(() => { if (!notifPanelVisible) panel.style.display = 'none'; }, 300);
+}
+
+function toggleNotificationPanel() {
+  if (notifPanelVisible) hideNotificationPanel();
+  else showNotificationPanel();
 }
 
 // --- Status Detection ---
@@ -1650,6 +1905,23 @@ function setupStatusListener() {
       session.terminal.applySettings(pendingTerminalSettings);
     }
 
+    // Notification ring on unfocused panes that need attention
+    const needsAttention = status === 'WaitingForInput' || status === 'NeedsPermission' || status === 'Exited';
+    if (needsAttention && idx !== focusedIndex) {
+      session.pane.classList.add('notify-ring');
+      const card = document.querySelectorAll('.session-card')[idx];
+      if (card) card.classList.add('notify-badge');
+    } else if (!needsAttention) {
+      session.pane.classList.remove('notify-ring');
+      const card = document.querySelectorAll('.session-card')[idx];
+      if (card) card.classList.remove('notify-badge');
+    }
+
+    // Add to notification history
+    if (needsAttention) {
+      addNotification(session.name, status, idx);
+    }
+
     triggerMascotBounce();
     maybeNotify(session, status);
   });
@@ -1683,6 +1955,9 @@ const APP_TIPS = [
   'Minimize sessions to the footer bar',
   'File viewer tracks your terminal\'s directory',
   'Custom themes in Settings > Theme',
+  'Cmd+I opens the notification panel',
+  'Cmd+Opt+Arrows to navigate between panes',
+  'Terminals emit OSC 9 for notifications',
 ];
 
 const SPEECH_WORKING = ['On it!', 'Working...', 'Processing...'];
@@ -2075,7 +2350,7 @@ function setupResize(handleId, panel, side) {
 
 function saveSessionState() {
   const data = {
-    version: 2,
+    version: 3,
     layoutMode,
     snapToGrid,
     gridSplitRatios,
@@ -2084,6 +2359,7 @@ function saveSessionState() {
       cwd: s.cwd,
       minimized: s.minimized,
       freeformRect: s.freeformRect,
+      scrollback: s.terminal.getScrollback(500), // Save last 500 lines
     })),
     focused_index: focusedIndex,
   };
@@ -2175,6 +2451,74 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Notification permission is handled by tauri-plugin-notification on first use
 
+  // Socket API events
+  listen('socket-notification', (event) => {
+    const { title, body } = event.payload;
+    addNotification(title || 'External', body || '', -1);
+    // Also send desktop notification
+    if (!windowFocused && localStorage.getItem('ps-notifications') !== 'false') {
+      invoke('plugin:notification|is_permission_granted').then(granted => {
+        if (granted) {
+          const options = { title: title || 'PaneStreet', body: body || '' };
+          if (localStorage.getItem('ps-notify-sound') !== 'false') options.sound = 'default';
+          invoke('plugin:notification|notify', { options });
+        }
+      }).catch(() => {});
+    }
+  });
+
+  listen('socket-focus', (event) => {
+    const { session_id } = event.payload;
+    const idx = sessions.findIndex(s => s.id === session_id);
+    if (idx >= 0) {
+      if (sessions[idx].minimized) restoreSession(idx);
+      else setFocus(idx);
+    }
+  });
+
+  // Notification panel toggle
+  document.getElementById('notification-toggle-btn').addEventListener('click', () => {
+    toggleNotificationPanel();
+  });
+  document.getElementById('notif-close-btn').addEventListener('click', () => {
+    hideNotificationPanel();
+  });
+  document.getElementById('notif-clear-btn').addEventListener('click', () => {
+    notificationHistory.length = 0;
+    unreadNotificationCount = 0;
+    updateNotificationBadge();
+    renderNotificationPanel();
+  });
+
+  // Listen for OSC terminal notifications (OSC 9/99/777)
+  window.addEventListener('terminal-notification', (e) => {
+    const { sessionId, title, body } = e.detail;
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    const idx = sessions.indexOf(session);
+
+    // Add notification ring if not focused
+    if (idx !== focusedIndex) {
+      session.pane.classList.add('notify-ring');
+      const card = document.querySelectorAll('.session-card')[idx];
+      if (card) card.classList.add('notify-badge');
+    }
+
+    // Add to notification history
+    addNotification(session.name, `OSC: ${body}`, idx);
+
+    // Send desktop notification if window not focused
+    if (!windowFocused && localStorage.getItem('ps-notifications') !== 'false') {
+      invoke('plugin:notification|is_permission_granted').then(granted => {
+        if (granted) {
+          const options = { title: title || 'PaneStreet', body: `${session.name}: ${body}` };
+          if (localStorage.getItem('ps-notify-sound') !== 'false') options.sound = 'default';
+          invoke('plugin:notification|notify', { options });
+        }
+      }).catch(() => {});
+    }
+  });
+
   // Initialize mascot
   setupMascotSpeech();
 
@@ -2184,16 +2528,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const json = await invoke('load_sessions');
     if (json) {
       const data = JSON.parse(json);
-      if ((data.version === 1 || data.version === 2) && data.sessions?.length > 0) {
-        // Restore layout mode from v2 data
-        if (data.version === 2) {
+      if ((data.version === 1 || data.version === 2 || data.version === 3) && data.sessions?.length > 0) {
+        // Restore layout mode from v2+ data
+        if (data.version >= 2) {
           layoutMode = data.layoutMode || 'auto';
           snapToGrid = data.snapToGrid !== false;
           if (data.gridSplitRatios) gridSplitRatios = data.gridSplitRatios;
         }
 
         for (const saved of data.sessions) {
-          await createSession(saved.cwd);
+          // Restore scrollback before creating session
+          const scrollback = saved.scrollback || null;
+          await createSession(saved.cwd, scrollback);
           const idx = sessions.length - 1;
           if (saved.name) {
             sessions[idx].name = saved.name;
@@ -2241,9 +2587,48 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateFileViewerCwd(cwd);
         setFocusedCwd(cwd);
         updateGitInfo();
+        updateSidebarMeta();
       }
     } catch (err) {
       console.warn('CWD poll error:', err);
     }
   }, 2000);
+
+  // Poll listening ports for all sessions (less frequent)
+  setInterval(async () => {
+    for (const session of sessions) {
+      if (!session?.id) continue;
+      try {
+        const ports = await invoke('get_listening_ports', { sessionId: session.id });
+        session._ports = ports || [];
+      } catch {
+        session._ports = [];
+      }
+    }
+    updateSidebarMeta();
+  }, 5000);
+
+  // Poll PR status for focused session (infrequent, uses gh CLI)
+  setInterval(async () => {
+    const session = sessions[focusedIndex];
+    if (!session?.cwd) return;
+    try {
+      const pr = await invoke('get_pr_status', { cwd: session.cwd });
+      session._pr = pr;
+    } catch {
+      session._pr = null;
+    }
+    updateSidebarMeta();
+  }, 30000); // Every 30s — gh CLI is slow
+
+  // Initial PR fetch after a delay
+  setTimeout(async () => {
+    const session = sessions[focusedIndex];
+    if (!session?.cwd) return;
+    try {
+      const pr = await invoke('get_pr_status', { cwd: session.cwd });
+      session._pr = pr;
+      updateSidebarMeta();
+    } catch {}
+  }, 3000);
 });

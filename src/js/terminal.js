@@ -57,6 +57,43 @@ export class TerminalSession {
     this.term.loadAddon(this.fitAddon);
     this.term.loadAddon(new WebLinksAddon());
 
+    // Register OSC handlers for terminal notifications (OSC 9, 99, 777)
+    // OSC 9: iTerm2-style growl notification
+    this.term.parser.registerOscHandler(9, (data) => {
+      window.dispatchEvent(new CustomEvent('terminal-notification', {
+        detail: { title: 'Terminal', body: data, sessionId: this.sessionId }
+      }));
+      return true;
+    });
+    // OSC 99: kitty notification protocol
+    this.term.parser.registerOscHandler(99, (data) => {
+      // kitty format: key=value;key=value pairs, 'body' or 'p' for payload
+      let body = data;
+      const parts = data.split(';');
+      for (const part of parts) {
+        const [key, ...rest] = part.split('=');
+        if (key === 'body' || key === 'p' || key === 'd') {
+          body = rest.join('=');
+          break;
+        }
+      }
+      window.dispatchEvent(new CustomEvent('terminal-notification', {
+        detail: { title: 'Terminal', body, sessionId: this.sessionId }
+      }));
+      return true;
+    });
+    // OSC 777: rxvt-unicode notification
+    this.term.parser.registerOscHandler(777, (data) => {
+      // Format: notify;title;body
+      const parts = data.split(';');
+      const title = parts[1] || 'Terminal';
+      const body = parts.slice(2).join(';') || parts[1] || data;
+      window.dispatchEvent(new CustomEvent('terminal-notification', {
+        detail: { title, body, sessionId: this.sessionId }
+      }));
+      return true;
+    });
+
     // Observe container resize
     this.resizeObserver = new ResizeObserver(() => {
       this.fit();
@@ -139,6 +176,39 @@ export class TerminalSession {
 
   focus() {
     this.term.focus();
+  }
+
+  /**
+   * Serialize the terminal scrollback buffer (last N lines) as plain text.
+   * Used for session persistence across restarts.
+   */
+  getScrollback(maxLines = 1000) {
+    const buffer = this.term.buffer.active;
+    const totalLines = buffer.length;
+    const startLine = Math.max(0, totalLines - maxLines);
+    const lines = [];
+    for (let i = startLine; i < totalLines; i++) {
+      const line = buffer.getLine(i);
+      if (line) {
+        const text = line.translateToString(true);
+        // Skip trailing empty lines
+        lines.push(text);
+      }
+    }
+    // Trim trailing empty lines
+    while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+      lines.pop();
+    }
+    return lines.join('\n');
+  }
+
+  /**
+   * Write saved scrollback content into the terminal before connecting PTY.
+   */
+  restoreScrollback(content) {
+    if (!content) return;
+    // Write the content with newlines so it appears as previous output
+    this.term.write(content.replace(/\n/g, '\r\n') + '\r\n');
   }
 
   async destroy() {
