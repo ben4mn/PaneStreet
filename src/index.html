@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pane Street</title>
+  <link rel="stylesheet" href="vendor/xterm/xterm.css">
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+  <div id="app">
+    <div id="sidebar">
+      <button id="new-session-btn">+ New Terminal</button>
+      <h2>Sessions</h2>
+      <div id="session-list"></div>
+      <div id="sidebar-actions">
+        <button id="config-plugins-btn">Plugins</button>
+        <button id="config-mcps-btn">MCPs</button>
+        <button id="config-memory-btn">Memory</button>
+        <button id="settings-btn">Settings</button>
+      </div>
+    </div>
+    <div id="main">
+      <div id="pane-grid"></div>
+      <div id="settings-panel" class="config-panel" style="display:none"></div>
+      <div id="plugins-panel" class="config-panel" style="display:none"></div>
+      <div id="mcps-panel" class="config-panel" style="display:none"></div>
+      <div id="memory-panel" class="config-panel" style="display:none"></div>
+      <div id="footer">
+        <span id="footer-git"></span>
+        <span id="footer-pills"></span>
+        <span id="footer-mascot-area">
+          <span id="footer-mascot">
+            <span id="mascot-speech" class="mascot-speech"></span>
+            <svg viewBox="0 0 28 28" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g class="robot-body">
+                <!-- Antenna -->
+                <g class="robot-antenna">
+                  <line x1="14" y1="5" x2="14" y2="2" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+                  <circle cx="14" cy="1.5" r="1.5" fill="var(--accent)"/>
+                </g>
+                <!-- Head -->
+                <rect x="7" y="5" width="14" height="10" rx="3" fill="var(--text-secondary)"/>
+                <rect x="7" y="5" width="14" height="10" rx="3" stroke="var(--text-muted)" stroke-width="0.5"/>
+                <!-- Eyes -->
+                <g class="robot-eyes">
+                  <circle cx="11" cy="10" r="2" fill="#111"/>
+                  <circle cx="11" cy="9.5" r="1.2" fill="var(--accent)"/>
+                  <circle cx="10.3" cy="9" r="0.5" fill="#fff" opacity="0.7"/>
+                  <circle cx="17" cy="10" r="2" fill="#111"/>
+                  <circle cx="17" cy="9.5" r="1.2" fill="var(--accent)"/>
+                  <circle cx="16.3" cy="9" r="0.5" fill="#fff" opacity="0.7"/>
+                </g>
+                <!-- Mouth -->
+                <path d="M11 13 Q14 15 17 13" stroke="var(--text-muted)" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+                <!-- Body -->
+                <rect x="9" y="16" width="10" height="6" rx="2" fill="var(--text-muted)"/>
+                <!-- Chest light -->
+                <circle class="robot-chest-glow" cx="14" cy="19" r="1.5" fill="var(--accent)" opacity="0.8"/>
+                <!-- Arms -->
+                <rect class="robot-arm-l" x="5" y="17" width="3" height="4" rx="1.5" fill="var(--text-secondary)"/>
+                <rect class="robot-arm-r" x="20" y="17" width="3" height="4" rx="1.5" fill="var(--text-secondary)"/>
+                <!-- Legs with feet as single groups -->
+                <g class="robot-leg-left">
+                  <rect x="10" y="22" width="3" height="3.5" rx="1" fill="var(--text-secondary)"/>
+                  <rect x="9" y="25" width="5" height="2" rx="1" fill="var(--text-secondary)"/>
+                </g>
+                <g class="robot-leg-right">
+                  <rect x="15" y="22" width="3" height="3.5" rx="1" fill="var(--text-secondary)"/>
+                  <rect x="14" y="25" width="5" height="2" rx="1" fill="var(--text-secondary)"/>
+                </g>
+              </g>
+            </svg>
+          </span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

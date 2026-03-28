@@ -1,0 +1,11 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for PaneStreet",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "opener:default",
+    "dialog:default"
+  ]
+}
