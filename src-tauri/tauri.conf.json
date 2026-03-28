@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nickel-org/nickel/refs/heads/master/schema/tauri-conf.json",
   "productName": "PaneStreet",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "identifier": "com.panestreet.app",
   "build": {
     "frontendDist": "../src"
@@ -21,7 +21,9 @@
             "notification:default",
             "notification:allow-notify",
             "notification:allow-request-permission",
-            "notification:allow-is-permission-granted"
+            "notification:allow-is-permission-granted",
+            "updater:default",
+            "process:allow-restart"
           ]
         }
       ]
@@ -38,8 +40,17 @@
       }
     ]
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI5RTVCMEYzQ0M0MTk4QTAKUldTZ21FSE04N0RsdWRsM0o4clV0SXBGV3FhQzVHeWJaeFhSdHFiUnJHb2YyWk9hZ1lobzhWQjcK",
+      "endpoints": [
+        "https://github.com/ben4mn/PaneStreet/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",

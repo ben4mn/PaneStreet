@@ -650,17 +650,17 @@ async function renderSettingsTab(tab) {
       <div class="settings-group">
         <div class="setting-section-title">Updates</div>
         <div class="setting-row-stacked">
-          <div class="setting-description">Check if a newer version is available on GitHub.</div>
-          <div style="margin-top:8px;display:flex;align-items:center;gap:12px">
+          <div id="update-status-msg" class="setting-description">Check if a newer version is available.</div>
+          <div id="update-actions" style="margin-top:8px;display:flex;align-items:center;gap:12px">
             <button class="setting-browse-btn" id="check-update-btn" style="width:auto;padding:6px 16px">
               Check for Updates
             </button>
-            <span id="update-status-msg" style="font-size:var(--font-size-xs);color:var(--text-muted)"></span>
           </div>
-          <div id="update-download-row" style="display:none;margin-top:12px">
-            <a id="update-download-link" href="#" style="color:var(--accent);font-size:var(--font-size-sm);text-decoration:underline;cursor:pointer">
-              Download latest version
-            </a>
+          <div id="update-progress" style="display:none;margin-top:10px">
+            <div style="background:var(--bg-pane);border-radius:4px;height:6px;overflow:hidden">
+              <div id="update-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width 0.3s"></div>
+            </div>
+            <div id="update-progress-text" style="font-size:var(--font-size-xs);color:var(--text-muted);margin-top:4px"></div>
           </div>
         </div>
       </div>
@@ -672,50 +672,137 @@ async function renderSettingsTab(tab) {
 
     container.querySelector('#check-update-btn').addEventListener('click', async () => {
       const msgEl = container.querySelector('#update-status-msg');
-      const downloadRow = container.querySelector('#update-download-row');
-      const downloadLink = container.querySelector('#update-download-link');
+      const actionsEl = container.querySelector('#update-actions');
+      const progressEl = container.querySelector('#update-progress');
+      const progressBar = container.querySelector('#update-progress-bar');
+      const progressText = container.querySelector('#update-progress-text');
 
-      msgEl.textContent = 'Checking...';
+      msgEl.textContent = 'Checking for updates...';
       msgEl.style.color = 'var(--text-muted)';
-      downloadRow.style.display = 'none';
 
       try {
-        const resp = await fetch('https://api.github.com/repos/ben4mn/PaneStreet/releases/latest');
-        if (!resp.ok) throw new Error('GitHub API returned ' + resp.status);
-        const data = await resp.json();
+        // Try the native updater plugin first (requires signed releases)
+        const update = await invoke('plugin:updater|check', {});
 
-        const latestTag = data.tag_name.replace(/^v/, '');
-        const currentParts = version.split('.').map(Number);
-        const latestParts = latestTag.split('.').map(Number);
-
-        let isNewer = false;
-        for (let i = 0; i < 3; i++) {
-          const c = currentParts[i] || 0;
-          const l = latestParts[i] || 0;
-          if (l > c) { isNewer = true; break; }
-          if (l < c) break;
-        }
-
-        if (isNewer) {
-          msgEl.textContent = 'New version ' + latestTag + ' available!';
+        if (update) {
+          msgEl.textContent = 'New version ' + update.version + ' available!';
           msgEl.style.color = 'var(--status-waiting)';
-          downloadRow.style.display = '';
-          downloadLink.textContent = 'Download v' + latestTag;
-          downloadLink.onclick = (e) => {
-            e.preventDefault();
+
+          // Show release notes if available
+          if (update.body) {
+            msgEl.textContent += ' ' + update.body.split('\n')[0];
+          }
+
+          // Replace "Check" button with "Install Update" button
+          actionsEl.innerHTML = `
+            <button class="setting-browse-btn" id="install-update-btn" style="width:auto;padding:6px 16px;background:var(--accent);color:#fff">
+              Install Update
+            </button>
+            <span style="font-size:var(--font-size-xs);color:var(--text-muted)">v${version} → v${update.version}</span>
+          `;
+
+          container.querySelector('#install-update-btn').addEventListener('click', async () => {
+            const installBtn = container.querySelector('#install-update-btn');
+            installBtn.disabled = true;
+            installBtn.textContent = 'Downloading...';
+            progressEl.style.display = '';
+
+            let totalBytes = 0;
+            let downloadedBytes = 0;
+
             try {
-              window.__TAURI__.opener.openUrl(data.html_url);
-            } catch {
-              window.open(data.html_url, '_blank');
+              const channel = new window.__TAURI__.core.Channel();
+              channel.onmessage = (event) => {
+                if (event.event === 'Started' && event.data.contentLength) {
+                  totalBytes = event.data.contentLength;
+                } else if (event.event === 'Progress') {
+                  downloadedBytes += event.data.chunkLength;
+                  if (totalBytes > 0) {
+                    const pct = Math.min(100, Math.round((downloadedBytes / totalBytes) * 100));
+                    progressBar.style.width = pct + '%';
+                    progressText.textContent = pct + '% (' + Math.round(downloadedBytes / 1024) + ' KB)';
+                  } else {
+                    progressText.textContent = Math.round(downloadedBytes / 1024) + ' KB downloaded';
+                  }
+                } else if (event.event === 'Finished') {
+                  progressBar.style.width = '100%';
+                  progressText.textContent = 'Installing...';
+                  installBtn.textContent = 'Restarting...';
+                }
+              };
+
+              await invoke('plugin:updater|download_and_install', {
+                rid: update.rid,
+                onEvent: channel,
+              });
+
+              msgEl.textContent = 'Update installed! Restarting...';
+              msgEl.style.color = 'var(--status-idle)';
+
+              // Relaunch after brief delay so user sees the message
+              setTimeout(async () => {
+                try {
+                  await invoke('plugin:process|restart');
+                } catch (e) {
+                  msgEl.textContent = 'Update installed. Please restart the app manually.';
+                }
+              }, 1500);
+
+            } catch (err) {
+              msgEl.textContent = 'Download failed: ' + err;
+              msgEl.style.color = 'var(--status-exited)';
+              installBtn.textContent = 'Retry';
+              installBtn.disabled = false;
+              progressEl.style.display = 'none';
             }
-          };
+          });
+
         } else {
           msgEl.textContent = "You're up to date! (v" + version + ')';
           msgEl.style.color = 'var(--status-idle)';
         }
-      } catch (err) {
-        msgEl.textContent = 'Failed to check: ' + err.message;
-        msgEl.style.color = 'var(--status-exited)';
+
+      } catch (pluginErr) {
+        // Fallback: manual GitHub API check (for builds without signed releases)
+        console.warn('[updater] Plugin check failed, falling back to GitHub API:', pluginErr);
+        try {
+          const resp = await fetch('https://api.github.com/repos/ben4mn/PaneStreet/releases/latest');
+          if (!resp.ok) throw new Error('GitHub API returned ' + resp.status);
+          const data = await resp.json();
+
+          const latestTag = data.tag_name.replace(/^v/, '');
+          const currentParts = version.split('.').map(Number);
+          const latestParts = latestTag.split('.').map(Number);
+
+          let isNewer = false;
+          for (let i = 0; i < 3; i++) {
+            const c = currentParts[i] || 0;
+            const l = latestParts[i] || 0;
+            if (l > c) { isNewer = true; break; }
+            if (l < c) break;
+          }
+
+          if (isNewer) {
+            msgEl.textContent = 'New version ' + latestTag + ' available!';
+            msgEl.style.color = 'var(--status-waiting)';
+            actionsEl.innerHTML = `
+              <a href="#" id="update-download-link" style="color:var(--accent);font-size:var(--font-size-sm);text-decoration:underline;cursor:pointer">
+                Download v${latestTag} from GitHub
+              </a>
+            `;
+            container.querySelector('#update-download-link').onclick = (e) => {
+              e.preventDefault();
+              try { window.__TAURI__.opener.openUrl(data.html_url); }
+              catch { window.open(data.html_url, '_blank'); }
+            };
+          } else {
+            msgEl.textContent = "You're up to date! (v" + version + ')';
+            msgEl.style.color = 'var(--status-idle)';
+          }
+        } catch (fallbackErr) {
+          msgEl.textContent = 'Failed to check: ' + fallbackErr.message;
+          msgEl.style.color = 'var(--status-exited)';
+        }
       }
     });
   }
