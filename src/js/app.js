@@ -1,5 +1,5 @@
 import { TerminalSession } from './terminal.js';
-import { togglePanel, hidePanel, isAnyPanelActive, setOnHide, loadSavedTheme } from './config-panels.js';
+import { togglePanel, hidePanel, isAnyPanelActive, setOnHide, loadSavedTheme, setFocusedCwd } from './config-panels.js';
 import { initFileViewer, toggleFileViewer, updateFileViewerCwd, hideFileViewer, isFileViewerVisible } from './file-viewer.js';
 
 const { invoke } = window.__TAURI__.core;
@@ -9,6 +9,16 @@ const sessions = [];
 let focusedIndex = 0;
 let maximizedIndex = null;
 let contextMenu = null;
+let layoutMode = 'freeform'; // 'auto' | 'freeform'
+let snapToGrid = true;
+let freeformZCounter = 1;
+const SNAP_INCREMENT = 20;
+const PANE_MIN_WIDTH = 200;
+const PANE_MIN_HEIGHT = 120;
+
+// Grid split ratios — stored as percentages for columns and rows
+// Reset when pane count changes; keyed by layout count
+let gridSplitRatios = {};
 function nextTerminalNumber() {
   const used = new Set();
   for (const s of sessions) {
@@ -21,19 +31,41 @@ function nextTerminalNumber() {
 }
 let windowFocused = true;
 let pendingTerminalSettings = null;
+// Track app window focus via both JS and Tauri events for reliability
 window.addEventListener('focus', () => { windowFocused = true; });
 window.addEventListener('blur', () => { windowFocused = false; });
+document.addEventListener('visibilitychange', () => {
+  windowFocused = !document.hidden;
+});
+// Tauri native window focus events (most reliable for OS-level app switching)
+listen('tauri://focus', () => { windowFocused = true; });
+listen('tauri://blur', () => { windowFocused = false; });
 
 // --- Grid Layout ---
 
 function updateGridLayout() {
   const grid = document.getElementById('pane-grid');
 
-  // Remove all panes from grid (DOM re-parenting preserves xterm state)
+  // Remove all panes and gutters from grid
   sessions.forEach(s => {
     if (s.pane.parentNode === grid) {
       grid.removeChild(s.pane);
     }
+  });
+  grid.querySelectorAll('.grid-gutter').forEach(g => g.remove());
+
+  if (layoutMode === 'freeform') {
+    applyFreeformLayout();
+    return;
+  }
+
+  grid.classList.remove('freeform');
+  grid.style.gridTemplateColumns = '';
+  grid.style.gridTemplateRows = '';
+  // Clear any inline freeform styles
+  sessions.forEach(s => {
+    s.pane.style.cssText = '';
+    removeFreeformHandles(s.pane);
   });
 
   if (maximizedIndex !== null && maximizedIndex < sessions.length) {
@@ -45,9 +77,664 @@ function updateGridLayout() {
     const count = Math.min(visible.length, 6);
     grid.className = count > 0 ? `layout-${count}` : '';
     visible.forEach(s => grid.appendChild(s.pane));
+
+    // Apply saved split ratios if any
+    if (gridSplitRatios[count]) {
+      const r = gridSplitRatios[count];
+      if (r.cols) grid.style.gridTemplateColumns = r.cols;
+      if (r.rows) grid.style.gridTemplateRows = r.rows;
+    }
+
+    // Insert grid gutters for resizable splits (skip layout-5 — complex spanning)
+    if (count >= 2 && count !== 5) {
+      insertGridGutters(grid, count);
+    }
   }
 
   requestAnimationFrame(() => fitVisibleTerminals());
+}
+
+// --- Grid Gutters (in-grid resize) ---
+
+function getGridLayoutInfo(count) {
+  // Returns { cols, rows } describing the grid structure
+  switch (count) {
+    case 2: return { cols: 2, rows: 1 };
+    case 3: return { cols: 2, rows: 2 }; // triptych
+    case 4: return { cols: 2, rows: 2 };
+    case 5: return { cols: 3, rows: 2 }; // special: top 3, bottom 2
+    case 6: return { cols: 3, rows: 2 };
+    default: return { cols: 1, rows: 1 };
+  }
+}
+
+function insertGridGutters(grid, count) {
+  const info = getGridLayoutInfo(count);
+  const gridRect = grid.getBoundingClientRect();
+  const saved = gridSplitRatios[count];
+
+  // Parse saved ratios to get gutter positions
+  let colPositions = [];
+  let rowPositions = [];
+  if (saved?.cols) {
+    const parts = parseGridTemplate(saved.cols, info.cols, gridRect.width);
+    let cumulative = 0;
+    for (let i = 0; i < parts.length - 1; i++) {
+      cumulative += parts[i];
+      colPositions.push(cumulative);
+    }
+  }
+  if (saved?.rows) {
+    const parts = parseGridTemplate(saved.rows, info.rows, gridRect.height);
+    let cumulative = 0;
+    for (let i = 0; i < parts.length - 1; i++) {
+      cumulative += parts[i];
+      rowPositions.push(cumulative);
+    }
+  }
+
+  // Double-click any gutter to reset to equal splits
+  function resetSplits() {
+    grid.style.gridTemplateColumns = '';
+    grid.style.gridTemplateRows = '';
+    delete gridSplitRatios[count];
+    fitVisibleTerminals();
+    saveSessionState();
+    // Reposition gutters
+    grid.querySelectorAll('.grid-gutter-v').forEach((g, i) => {
+      g.style.left = `${((i + 1) / info.cols) * 100}%`;
+    });
+    grid.querySelectorAll('.grid-gutter-h').forEach((g, i) => {
+      g.style.top = `${((i + 1) / info.rows) * 100}%`;
+    });
+  }
+
+  // Vertical gutter(s) — between columns
+  if (info.cols >= 2) {
+    for (let c = 1; c < info.cols; c++) {
+      const gutter = document.createElement('div');
+      gutter.className = 'grid-gutter grid-gutter-v';
+      const pos = colPositions[c - 1] ?? (c / info.cols) * 100;
+      gutter.style.left = `${pos}%`;
+      gutter.dataset.col = c;
+      gutter.dataset.totalCols = info.cols;
+      gutter.dataset.count = count;
+      gutter.addEventListener('dblclick', resetSplits);
+      grid.appendChild(gutter);
+    }
+  }
+
+  // Horizontal gutter(s) — between rows
+  if (info.rows >= 2) {
+    for (let r = 1; r < info.rows; r++) {
+      const gutter = document.createElement('div');
+      gutter.className = 'grid-gutter grid-gutter-h';
+      const pos = rowPositions[r - 1] ?? (r / info.rows) * 100;
+      gutter.style.top = `${pos}%`;
+      gutter.dataset.row = r;
+      gutter.dataset.totalRows = info.rows;
+      gutter.dataset.count = count;
+      gutter.addEventListener('dblclick', resetSplits);
+      grid.appendChild(gutter);
+    }
+  }
+}
+
+function setupGridGutterDrag() {
+  let dragging = null;
+
+  function startGutterDrag(e, gutter) {
+    e.preventDefault();
+    const grid = document.getElementById('pane-grid');
+    const gridRect = grid.getBoundingClientRect();
+    const isVertical = gutter.classList.contains('grid-gutter-v');
+
+    dragging = {
+      gutter,
+      grid,
+      gridRect,
+      isVertical,
+      col: parseInt(gutter.dataset.col) || 0,
+      row: parseInt(gutter.dataset.row) || 0,
+      totalCols: parseInt(gutter.dataset.totalCols) || 1,
+      totalRows: parseInt(gutter.dataset.totalRows) || 1,
+      count: parseInt(gutter.dataset.count) || 2,
+    };
+
+    document.body.style.cursor = isVertical ? 'col-resize' : 'row-resize';
+    gutter.classList.add('active');
+  }
+
+  document.addEventListener('mousedown', (e) => {
+    if (layoutMode !== 'auto') return;
+
+    // Direct gutter click
+    const gutter = e.target.closest('.grid-gutter');
+    if (gutter) {
+      startGutterDrag(e, gutter);
+      return;
+    }
+
+    // Pane edge click → find nearest gutter
+    const edge = e.target.closest('.pane-edge');
+    if (edge && maximizedIndex === null) {
+      const pane = edge.closest('.pane');
+      const grid = document.getElementById('pane-grid');
+      const paneRect = pane.getBoundingClientRect();
+      const gridRect = grid.getBoundingClientRect();
+
+      let nearestGutter = null;
+      let bestDist = Infinity;
+      const isVEdge = edge.classList.contains('pane-edge-right') || edge.classList.contains('pane-edge-corner');
+      const isHEdge = edge.classList.contains('pane-edge-bottom') || edge.classList.contains('pane-edge-corner');
+
+      // Prefer vertical gutter if dragging a right edge
+      if (isVEdge) {
+        grid.querySelectorAll('.grid-gutter-v').forEach(g => {
+          const gLeft = gridRect.left + (parseFloat(g.style.left) / 100) * gridRect.width;
+          const dist = Math.abs(gLeft - paneRect.right);
+          if (dist < bestDist) { bestDist = dist; nearestGutter = g; }
+        });
+      }
+      // Prefer horizontal gutter if dragging a bottom edge
+      if (isHEdge && (!nearestGutter || bestDist > 50)) {
+        grid.querySelectorAll('.grid-gutter-h').forEach(g => {
+          const gTop = gridRect.top + (parseFloat(g.style.top) / 100) * gridRect.height;
+          const dist = Math.abs(gTop - paneRect.bottom);
+          if (dist < bestDist) { bestDist = dist; nearestGutter = g; }
+        });
+      }
+
+      if (nearestGutter && bestDist < 60) {
+        startGutterDrag(e, nearestGutter);
+      }
+    }
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const { grid, gridRect, isVertical, col, row, totalCols, totalRows, count } = dragging;
+
+    if (isVertical) {
+      const pct = ((e.clientX - gridRect.left) / gridRect.width) * 100;
+      const clamped = Math.max(15, Math.min(85, pct));
+      // Build column template
+      if (totalCols === 2) {
+        grid.style.gridTemplateColumns = `${clamped}% ${100 - clamped}%`;
+      } else if (totalCols === 3) {
+        // For 3 columns, adjust the one being dragged
+        const current = grid.style.gridTemplateColumns || '1fr 1fr 1fr';
+        const parts = parseGridTemplate(current, totalCols, gridRect.width);
+        if (col === 1) {
+          const remaining = parts[1] + parts[2];
+          parts[0] = clamped;
+          const ratio = parts[2] / (parts[1] + parts[2]) || 0.5;
+          parts[1] = (100 - clamped) * (1 - ratio);
+          parts[2] = (100 - clamped) * ratio;
+        } else {
+          const beforeTotal = parts[0] + parts[1];
+          parts[2] = 100 - clamped;
+          const ratio = parts[0] / beforeTotal || 0.5;
+          parts[0] = clamped * ratio;
+          parts[1] = clamped * (1 - ratio);
+        }
+        grid.style.gridTemplateColumns = parts.map(p => `${Math.max(10, p)}%`).join(' ');
+      }
+      // Update gutter position
+      dragging.gutter.style.left = clamped + '%';
+    } else {
+      const pct = ((e.clientY - gridRect.top) / gridRect.height) * 100;
+      const clamped = Math.max(15, Math.min(85, pct));
+      grid.style.gridTemplateRows = `${clamped}% ${100 - clamped}%`;
+      dragging.gutter.style.top = clamped + '%';
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    document.body.style.cursor = '';
+    dragging.gutter.classList.remove('active');
+
+    // Save ratios
+    const count = dragging.count;
+    const grid = dragging.grid;
+    gridSplitRatios[count] = {
+      cols: grid.style.gridTemplateColumns || null,
+      rows: grid.style.gridTemplateRows || null,
+    };
+
+    fitVisibleTerminals();
+    saveSessionState();
+    dragging = null;
+  });
+}
+
+function parseGridTemplate(template, count, totalPx) {
+  // Parse a grid template string into percentage values
+  if (template.includes('fr')) {
+    // Equal distribution
+    const pct = 100 / count;
+    return Array(count).fill(pct);
+  }
+  return template.split(/\s+/).map(v => {
+    if (v.endsWith('%')) return parseFloat(v);
+    if (v.endsWith('px')) return (parseFloat(v) / totalPx) * 100;
+    return 100 / count;
+  });
+}
+
+// --- Freeform Layout ---
+
+function snapValue(v) {
+  return snapToGrid ? Math.round(v / SNAP_INCREMENT) * SNAP_INCREMENT : v;
+}
+
+function snapshotCurrentPositions() {
+  const grid = document.getElementById('pane-grid');
+  const gridRect = grid.getBoundingClientRect();
+  sessions.forEach(s => {
+    if (s.minimized || !s.pane.parentNode) return;
+    const r = s.pane.getBoundingClientRect();
+    s.freeformRect = {
+      x: r.left - gridRect.left,
+      y: r.top - gridRect.top,
+      width: r.width,
+      height: r.height,
+    };
+  });
+}
+
+function applyFreeformLayout() {
+  const grid = document.getElementById('pane-grid');
+  grid.className = 'freeform';
+
+  if (maximizedIndex !== null && maximizedIndex < sessions.length) {
+    // Show only the maximized pane at full size
+    const s = sessions[maximizedIndex];
+    s.pane.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;z-index:9;';
+    grid.appendChild(s.pane);
+    addFreeformHandles(s.pane);
+    requestAnimationFrame(() => fitVisibleTerminals());
+    return;
+  }
+
+  const visible = sessions.filter(s => !s.minimized);
+  const gridRect = grid.getBoundingClientRect();
+
+  visible.forEach((s, i) => {
+    // Assign a default rect if none exists — start small, cascaded
+    if (!s.freeformRect) {
+      const defaultW = Math.min(600, gridRect.width * 0.5);
+      const defaultH = Math.min(450, gridRect.height * 0.55);
+      const cascade = i * 30;
+      const x = Math.min(cascade + 20, gridRect.width - defaultW);
+      const y = Math.min(cascade + 20, gridRect.height - defaultH);
+      s.freeformRect = { x, y, width: defaultW, height: defaultH };
+    }
+
+    const r = s.freeformRect;
+    s.pane.style.cssText = `position:absolute;left:${r.x}px;top:${r.y}px;width:${r.width}px;height:${r.height}px;z-index:${s === sessions[focusedIndex] ? freeformZCounter : 1};`;
+    grid.appendChild(s.pane);
+    addFreeformHandles(s.pane);
+  });
+
+  requestAnimationFrame(() => fitVisibleTerminals());
+}
+
+function addFreeformHandles(pane) {
+  if (pane.querySelector('.pane-resize-handle')) return; // already has handles
+  const directions = ['e', 's', 'se'];
+  directions.forEach(dir => {
+    const handle = document.createElement('div');
+    handle.className = `pane-resize-handle pane-resize-${dir}`;
+    handle.dataset.direction = dir;
+    pane.appendChild(handle);
+  });
+  // Make header draggable
+  const header = pane.querySelector('.pane-header');
+  if (header) header.classList.add('pane-header-draggable');
+}
+
+function removeFreeformHandles(pane) {
+  pane.querySelectorAll('.pane-resize-handle').forEach(h => h.remove());
+  const header = pane.querySelector('.pane-header');
+  if (header) header.classList.remove('pane-header-draggable');
+}
+
+function toggleLayoutMode() {
+  const grid = document.getElementById('pane-grid');
+
+  if (layoutMode === 'auto') {
+    // Snapshot current positions before switching
+    snapshotCurrentPositions();
+    layoutMode = 'freeform';
+  } else {
+    layoutMode = 'auto';
+    // Clear freeform rects so auto layout takes over
+    sessions.forEach(s => { s.pane.style.cssText = ''; });
+  }
+
+  updateGridLayout();
+  updateLayoutToggleUI();
+  saveSessionState();
+}
+
+function toggleSnapToGrid() {
+  snapToGrid = !snapToGrid;
+  updateLayoutToggleUI();
+  saveSessionState();
+}
+
+function updateLayoutToggleUI() {
+  const toggle = document.getElementById('toolbar-layout-toggle');
+  if (!toggle) return;
+
+  const autoBtn = toggle.querySelector('[data-mode="auto"]');
+  const freeBtn = toggle.querySelector('[data-mode="freeform"]');
+  const snapBtn = toggle.querySelector('[data-mode="snap"]');
+  const divider = toggle.querySelector('.mode-divider');
+
+  if (autoBtn) autoBtn.classList.toggle('active', layoutMode === 'auto');
+  if (freeBtn) freeBtn.classList.toggle('active', layoutMode === 'freeform');
+  if (divider) divider.style.display = layoutMode === 'freeform' ? '' : 'none';
+  if (snapBtn) {
+    snapBtn.style.display = layoutMode === 'freeform' ? '' : 'none';
+    snapBtn.classList.toggle('active', snapToGrid);
+  }
+}
+
+function createLayoutToggle() {
+  const container = document.getElementById('toolbar-layout-toggle');
+  if (!container) return;
+
+  // SVG icons for each mode
+  const gridSvg = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>';
+  const freeSvg = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="7" height="6" rx="1"/><rect x="6" y="8" width="9" height="6" rx="1"/></svg>';
+  const snapSvg = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 4V1h3M13 1h2v3M1 12v3h3M15 13v2h-2"/><rect x="4" y="4" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/></svg>';
+
+  const autoBtn = document.createElement('button');
+  autoBtn.className = 'mode-btn';
+  autoBtn.dataset.mode = 'auto';
+  autoBtn.innerHTML = gridSvg + '<span class="mode-label">Grid</span>';
+  autoBtn.title = 'Auto grid layout (\u2318\u21E7G)';
+  autoBtn.addEventListener('click', () => {
+    if (layoutMode !== 'auto') toggleLayoutMode();
+  });
+
+  const freeBtn = document.createElement('button');
+  freeBtn.className = 'mode-btn';
+  freeBtn.dataset.mode = 'freeform';
+  freeBtn.innerHTML = freeSvg + '<span class="mode-label">Free</span>';
+  freeBtn.title = 'Free-form layout (\u2318\u21E7G)';
+  freeBtn.addEventListener('click', () => {
+    if (layoutMode !== 'freeform') toggleLayoutMode();
+  });
+
+  const divider = document.createElement('div');
+  divider.className = 'mode-divider';
+
+  const snapBtn = document.createElement('button');
+  snapBtn.className = 'mode-btn';
+  snapBtn.dataset.mode = 'snap';
+  snapBtn.innerHTML = snapSvg + '<span class="mode-label">Snap</span>';
+  snapBtn.title = 'Snap to grid when dragging';
+  snapBtn.style.display = 'none';
+  snapBtn.addEventListener('click', () => toggleSnapToGrid());
+
+  container.appendChild(autoBtn);
+  container.appendChild(freeBtn);
+  container.appendChild(divider);
+  container.appendChild(snapBtn);
+
+  // Set initial active state
+  updateLayoutToggleUI();
+}
+
+function setupFreeformDrag() {
+  let dragging = null;
+  let snapPreview = null;
+  const SNAP_EDGE = 30; // px from edge to trigger snap zone
+
+  function getSnapZone(x, y, gridRect, r) {
+    // Returns a snap zone descriptor or null
+    if (x <= SNAP_EDGE) {
+      return { zone: 'left', x: 0, y: 0, width: gridRect.width / 2, height: gridRect.height };
+    }
+    if (x + r.width >= gridRect.width - SNAP_EDGE) {
+      return { zone: 'right', x: gridRect.width / 2, y: 0, width: gridRect.width / 2, height: gridRect.height };
+    }
+    if (y <= SNAP_EDGE) {
+      return { zone: 'top', x: 0, y: 0, width: gridRect.width, height: gridRect.height / 2 };
+    }
+    if (y + r.height >= gridRect.height - SNAP_EDGE) {
+      return { zone: 'bottom', x: 0, y: gridRect.height / 2, width: gridRect.width, height: gridRect.height / 2 };
+    }
+    return null;
+  }
+
+  function showSnapPreview(snap, grid) {
+    if (!snapPreview) {
+      snapPreview = document.createElement('div');
+      snapPreview.className = 'snap-preview';
+      grid.appendChild(snapPreview);
+    }
+    snapPreview.style.left = snap.x + 'px';
+    snapPreview.style.top = snap.y + 'px';
+    snapPreview.style.width = snap.width + 'px';
+    snapPreview.style.height = snap.height + 'px';
+    snapPreview.style.display = '';
+  }
+
+  function hideSnapPreview() {
+    if (snapPreview) {
+      snapPreview.style.display = 'none';
+    }
+  }
+
+  document.addEventListener('mousedown', (e) => {
+    if (layoutMode !== 'freeform') return;
+    if (maximizedIndex !== null) return;
+
+    const header = e.target.closest('.pane-header-draggable');
+    if (!header) return;
+    if (e.target.closest('button')) return;
+
+    const pane = header.closest('.pane');
+    const session = sessions.find(s => s.pane === pane);
+    if (!session || !session.freeformRect) return;
+
+    e.preventDefault();
+    dragging = {
+      session,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: session.freeformRect.x,
+      origY: session.freeformRect.y,
+      origWidth: session.freeformRect.width,
+      origHeight: session.freeformRect.height,
+      snapZone: null,
+    };
+
+    freeformZCounter++;
+    pane.style.zIndex = freeformZCounter;
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - dragging.startX;
+    const dy = e.clientY - dragging.startY;
+    const r = dragging.session.freeformRect;
+    const grid = document.getElementById('pane-grid');
+    const gridRect = grid.getBoundingClientRect();
+
+    let newX = snapValue(dragging.origX + dx);
+    let newY = snapValue(dragging.origY + dy);
+
+    newX = Math.max(0, Math.min(newX, gridRect.width - r.width));
+    newY = Math.max(0, Math.min(newY, gridRect.height - r.height));
+
+    r.x = newX;
+    r.y = newY;
+    dragging.session.pane.style.left = r.x + 'px';
+    dragging.session.pane.style.top = r.y + 'px';
+
+    // Check snap zones
+    const snap = getSnapZone(newX, newY, gridRect, r);
+    dragging.snapZone = snap;
+    if (snap) {
+      showSnapPreview(snap, grid);
+    } else {
+      hideSnapPreview();
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+
+    // Apply snap zone if active
+    if (dragging.snapZone) {
+      const snap = dragging.snapZone;
+      const r = dragging.session.freeformRect;
+      const PAD = 4;
+      r.x = snap.x + PAD;
+      r.y = snap.y + PAD;
+      r.width = snap.width - PAD * 2;
+      r.height = snap.height - PAD * 2;
+      const pane = dragging.session.pane;
+      pane.style.left = r.x + 'px';
+      pane.style.top = r.y + 'px';
+      pane.style.width = r.width + 'px';
+      pane.style.height = r.height + 'px';
+    }
+
+    hideSnapPreview();
+    fitVisibleTerminals();
+    saveSessionState();
+    dragging = null;
+  });
+}
+
+function findAdjacentPanes(session, direction) {
+  // Find panes whose edges are close to this pane's resize edge
+  const r = session.freeformRect;
+  const PROXIMITY = 20;
+  const neighbors = [];
+
+  sessions.forEach(s => {
+    if (s === session || s.minimized || !s.freeformRect) return;
+    const sr = s.freeformRect;
+
+    if (direction.includes('e')) {
+      // Right edge of session near left edge of neighbor
+      if (Math.abs((r.x + r.width) - sr.x) < PROXIMITY) {
+        // Vertically overlapping
+        if (r.y < sr.y + sr.height && r.y + r.height > sr.y) {
+          neighbors.push({ session: s, axis: 'h', origX: sr.x, origWidth: sr.width });
+        }
+      }
+    }
+    if (direction.includes('s')) {
+      // Bottom edge of session near top edge of neighbor
+      if (Math.abs((r.y + r.height) - sr.y) < PROXIMITY) {
+        // Horizontally overlapping
+        if (r.x < sr.x + sr.width && r.x + r.width > sr.x) {
+          neighbors.push({ session: s, axis: 'v', origY: sr.y, origHeight: sr.height });
+        }
+      }
+    }
+  });
+  return neighbors;
+}
+
+function setupFreeformResize() {
+  let resizing = null;
+
+  document.addEventListener('mousedown', (e) => {
+    if (layoutMode !== 'freeform') return;
+
+    const handle = e.target.closest('.pane-resize-handle');
+    if (!handle) return;
+
+    const pane = handle.closest('.pane');
+    const session = sessions.find(s => s.pane === pane);
+    if (!session || !session.freeformRect) return;
+
+    e.preventDefault();
+    const r = session.freeformRect;
+    const dir = handle.dataset.direction;
+
+    resizing = {
+      session,
+      direction: dir,
+      startX: e.clientX,
+      startY: e.clientY,
+      origWidth: r.width,
+      origHeight: r.height,
+      origX: r.x,
+      origY: r.y,
+      neighbors: findAdjacentPanes(session, dir),
+    };
+
+    freeformZCounter++;
+    pane.style.zIndex = freeformZCounter;
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!resizing) return;
+    const dx = e.clientX - resizing.startX;
+    const dy = e.clientY - resizing.startY;
+    const r = resizing.session.freeformRect;
+    const dir = resizing.direction;
+    const grid = document.getElementById('pane-grid');
+    const gridRect = grid.getBoundingClientRect();
+
+    if (dir.includes('e')) {
+      const maxW = gridRect.width - r.x;
+      const newW = Math.max(PANE_MIN_WIDTH, Math.min(maxW, snapValue(resizing.origWidth + dx)));
+      const delta = newW - resizing.origWidth;
+      r.width = newW;
+
+      // Push adjacent panes
+      resizing.neighbors.forEach(n => {
+        if (n.axis === 'h') {
+          const nr = n.session.freeformRect;
+          nr.x = n.origX + delta;
+          nr.width = Math.max(PANE_MIN_WIDTH, n.origWidth - delta);
+          n.session.pane.style.left = nr.x + 'px';
+          n.session.pane.style.width = nr.width + 'px';
+        }
+      });
+    }
+    if (dir.includes('s')) {
+      const maxH = gridRect.height - r.y;
+      const newH = Math.max(PANE_MIN_HEIGHT, Math.min(maxH, snapValue(resizing.origHeight + dy)));
+      const delta = newH - resizing.origHeight;
+      r.height = newH;
+
+      // Push adjacent panes
+      resizing.neighbors.forEach(n => {
+        if (n.axis === 'v') {
+          const nr = n.session.freeformRect;
+          nr.y = n.origY + delta;
+          nr.height = Math.max(PANE_MIN_HEIGHT, n.origHeight - delta);
+          n.session.pane.style.top = nr.y + 'px';
+          n.session.pane.style.height = nr.height + 'px';
+        }
+      });
+    }
+
+    resizing.session.pane.style.width = r.width + 'px';
+    resizing.session.pane.style.height = r.height + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!resizing) return;
+    // Refit all affected terminals
+    resizing.session.terminal.fit();
+    resizing.neighbors.forEach(n => n.session.terminal.fit());
+    saveSessionState();
+    resizing = null;
+  });
 }
 
 function fitVisibleTerminals() {
@@ -64,11 +751,31 @@ function setFocus(index) {
   if (index < 0 || index >= sessions.length) return;
   if (sessions[index].minimized) return;
 
+  // If a different pane is maximized, switch maximize to the new target
+  if (maximizedIndex !== null && maximizedIndex !== index) {
+    maximizedIndex = index;
+    // Update maximize button icons
+    sessions.forEach((s, i) => {
+      const btn = s.pane.querySelector('.pane-maximize-btn');
+      if (btn) {
+        btn.innerHTML = (maximizedIndex === i) ? '\u29C9' : '\u25A1';
+        btn.title = (maximizedIndex === i) ? 'Restore (\u2318\u21E7Enter)' : 'Maximize (\u2318\u21E7Enter)';
+      }
+    });
+    updateGridLayout();
+  }
+
   focusedIndex = index;
 
   sessions.forEach((s, i) => {
     s.pane.classList.toggle('focused', i === index);
   });
+
+  // Z-index management in freeform mode
+  if (layoutMode === 'freeform') {
+    freeformZCounter++;
+    sessions[index].pane.style.zIndex = freeformZCounter;
+  }
 
   document.querySelectorAll('.session-card').forEach((c, i) => {
     c.classList.toggle('active', i === index);
@@ -78,6 +785,7 @@ function setFocus(index) {
   updateGitInfo();
   updateMascot(sessions[index].status || 'Idle');
   updateFileViewerCwd(sessions[index].cwd);
+  setFocusedCwd(sessions[index].cwd);
 }
 
 function focusNextVisible(fromIndex, direction) {
@@ -114,24 +822,40 @@ function createPane(name) {
   controls.className = 'pane-controls';
 
   const minimizeBtn = document.createElement('button');
-  minimizeBtn.textContent = '_';
-  minimizeBtn.title = 'Minimize';
-  minimizeBtn.onclick = (e) => {
+  minimizeBtn.className = 'pane-minimize-btn';
+  minimizeBtn.innerHTML = '\u2013'; // en dash
+  minimizeBtn.title = 'Minimize (⌘M)';
+  minimizeBtn.addEventListener('mousedown', (e) => {
     e.stopPropagation();
+    e.preventDefault();
     const idx = sessions.findIndex(s => s.pane === pane);
     if (idx >= 0) minimizeSession(idx);
-  };
+  });
 
   const closeBtn = document.createElement('button');
-  closeBtn.textContent = '\u00d7';
-  closeBtn.title = 'Close';
-  closeBtn.onclick = (e) => {
+  closeBtn.className = 'pane-close-btn';
+  closeBtn.innerHTML = '\u00d7';
+  closeBtn.title = 'Close (⌘W)';
+  closeBtn.addEventListener('mousedown', (e) => {
     e.stopPropagation();
+    e.preventDefault();
     const idx = sessions.findIndex(s => s.pane === pane);
     if (idx >= 0) removeSession(idx);
-  };
+  });
+
+  const maximizeBtn = document.createElement('button');
+  maximizeBtn.className = 'pane-maximize-btn';
+  maximizeBtn.innerHTML = '\u25A1'; // □ square
+  maximizeBtn.title = 'Maximize (⌘⇧Enter)';
+  maximizeBtn.addEventListener('mousedown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const idx = sessions.findIndex(s => s.pane === pane);
+    if (idx >= 0) toggleMaximize(idx);
+  });
 
   controls.appendChild(minimizeBtn);
+  controls.appendChild(maximizeBtn);
   controls.appendChild(closeBtn);
   header.appendChild(statusDot);
   header.appendChild(title);
@@ -146,8 +870,19 @@ function createPane(name) {
   const body = document.createElement('div');
   body.className = 'pane-body';
 
+  // Edge resize zones (for grid gutter interaction)
+  const edgeRight = document.createElement('div');
+  edgeRight.className = 'pane-edge pane-edge-right';
+  const edgeBottom = document.createElement('div');
+  edgeBottom.className = 'pane-edge pane-edge-bottom';
+  const edgeCorner = document.createElement('div');
+  edgeCorner.className = 'pane-edge pane-edge-corner';
+
   pane.appendChild(header);
   pane.appendChild(body);
+  pane.appendChild(edgeRight);
+  pane.appendChild(edgeBottom);
+  pane.appendChild(edgeCorner);
 
   // Click to focus
   pane.addEventListener('mousedown', () => {
@@ -207,6 +942,7 @@ async function createSession(restoreCwd) {
     statusDot,
     minimized: false,
     cwd: effectiveCwd || null,
+    freeformRect: null,
   };
 
   sessions.push(session);
@@ -270,9 +1006,6 @@ async function removeSession(index) {
 function minimizeSession(index) {
   if (index < 0 || index >= sessions.length) return;
 
-  const visibleCount = sessions.filter(s => !s.minimized).length;
-  if (visibleCount <= 1) return; // Don't minimize the last visible
-
   sessions[index].minimized = true;
 
   // Exit maximize mode if minimizing the maximized session
@@ -280,9 +1013,12 @@ function minimizeSession(index) {
     maximizedIndex = null;
   }
 
-  // Move focus if we just minimized the focused session
+  // Move focus to next visible, or leave unfocused if all minimized
   if (focusedIndex === index) {
-    focusNextVisible(index, 1);
+    const nextVisible = sessions.findIndex((s, i) => i !== index && !s.minimized);
+    if (nextVisible >= 0) {
+      focusNextVisible(index, 1);
+    }
   }
 
   rebuildSidebar();
@@ -315,6 +1051,15 @@ function toggleMaximize(index) {
     maximizedIndex = index;
   }
 
+  // Update all maximize button icons
+  sessions.forEach((s, i) => {
+    const btn = s.pane.querySelector('.pane-maximize-btn');
+    if (btn) {
+      btn.innerHTML = (maximizedIndex === i) ? '\u29C9' : '\u25A1'; // ⧉ vs □
+      btn.title = (maximizedIndex === i) ? 'Restore (⌘⇧Enter)' : 'Maximize (⌘⇧Enter)';
+    }
+  });
+
   updateGridLayout();
   updateFooterPills();
   setFocus(index);
@@ -323,15 +1068,39 @@ function toggleMaximize(index) {
 
 // --- Footer Pills ---
 
+function restoreAllSessions() {
+  sessions.forEach(s => { s.minimized = false; });
+  maximizedIndex = null;
+  rebuildSidebar();
+  updateGridLayout();
+  updateFooterPills();
+  saveSessionState();
+}
+
 function updateFooterPills() {
   const container = document.getElementById('footer-pills');
+  const footer = document.getElementById('footer');
+  const robot = document.getElementById('robot-overlay');
   container.innerHTML = '';
 
-  sessions.forEach((s, i) => {
-    if (!s.minimized) return;
+  const minimized = sessions.filter(s => s.minimized);
 
+  if (minimized.length > 0) {
+    // Count label
+    const countLabel = document.createElement('span');
+    countLabel.className = 'minimized-count';
+    countLabel.textContent = `${minimized.length} minimized`;
+    container.appendChild(countLabel);
+  }
+
+  minimized.forEach((s) => {
+    const i = sessions.indexOf(s);
     const pill = document.createElement('button');
     pill.className = 'footer-pill';
+    // Status-colored left border
+    if (s.statusDot.style.background) {
+      pill.style.borderLeftColor = s.statusDot.style.background;
+    }
 
     const dot = document.createElement('span');
     dot.className = 'status-dot';
@@ -340,12 +1109,42 @@ function updateFooterPills() {
     const name = document.createElement('span');
     name.textContent = s.name;
 
+    const restore = document.createElement('span');
+    restore.className = 'pill-restore';
+    restore.textContent = '\u2191';
+
     pill.appendChild(dot);
     pill.appendChild(name);
+    pill.appendChild(restore);
+    pill.title = `Restore ${s.name}`;
     pill.addEventListener('click', () => restoreSession(i));
 
     container.appendChild(pill);
   });
+
+  // Restore all button when multiple minimized
+  if (minimized.length > 1) {
+    const restoreAll = document.createElement('button');
+    restoreAll.className = 'restore-all-btn';
+    restoreAll.textContent = 'Restore all';
+    restoreAll.addEventListener('click', () => restoreAllSessions());
+    container.appendChild(restoreAll);
+  }
+
+  // Collapse footer only when no pills AND no git info
+  updateFooterVisibility();
+}
+
+function updateFooterVisibility() {
+  const footer = document.getElementById('footer');
+  const robot = document.getElementById('robot-overlay');
+  const hasGit = !!document.getElementById('footer-git')?.textContent;
+  const hasPills = sessions.some(s => s.minimized);
+  const isEmpty = !hasGit && !hasPills;
+  footer.classList.toggle('empty', isEmpty);
+  if (robot) {
+    robot.style.bottom = isEmpty ? '0' : 'var(--footer-height)';
+  }
 }
 
 // --- Sidebar ---
@@ -612,6 +1411,7 @@ async function updateGitInfo() {
     el.textContent = '';
     el.dataset.branch = '';
   }
+  updateFooterVisibility();
 }
 
 function setupGitInfoClick() {
@@ -656,9 +1456,20 @@ function setupSidebarToggle() {
   }
 
   toggleBtn.addEventListener('click', () => {
+    const isCollapsing = !sidebar.classList.contains('collapsed');
     sidebar.classList.toggle('collapsed');
-    robotOverlay?.classList.toggle('sidebar-collapsed', sidebar.classList.contains('collapsed'));
-    localStorage.setItem('ps-sidebar-collapsed', sidebar.classList.contains('collapsed'));
+    robotOverlay?.classList.toggle('sidebar-collapsed', isCollapsing);
+    // Clear inline width so CSS class takes effect
+    if (isCollapsing) {
+      sidebar._savedWidth = sidebar.style.width || '';
+      sidebar.style.width = '';
+    } else {
+      // Restore dragged width if there was one
+      if (sidebar._savedWidth) {
+        sidebar.style.width = sidebar._savedWidth;
+      }
+    }
+    localStorage.setItem('ps-sidebar-collapsed', isCollapsing);
   });
 
   // Re-fit terminals after sidebar transition completes
@@ -671,56 +1482,60 @@ function setupSidebarToggle() {
 
 // --- Keyboard Shortcuts ---
 
+function getShortcutBindings() {
+  const saved = localStorage.getItem('ps-shortcuts');
+  if (!saved) return null;
+  try {
+    const arr = JSON.parse(saved);
+    const map = {};
+    arr.forEach(s => { map[s.id] = s; });
+    return map;
+  } catch { return null; }
+}
+
+function matchesShortcut(e, id, bindings) {
+  const b = bindings?.[id];
+  if (!b) return false;
+  const keyLower = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  return keyLower === b.key && e.metaKey === b.meta && e.shiftKey === b.shift;
+}
+
 function setupShortcuts() {
+  // Default bindings (used as fallback)
+  const DEFAULTS = {
+    'close-panel':    { key: 'Escape',  meta: false, shift: false },
+    'settings':       { key: ',',       meta: true,  shift: false },
+    'sidebar-toggle': { key: 'b',       meta: true,  shift: false },
+    'file-viewer':    { key: 'e',       meta: true,  shift: true  },
+    'new-terminal':   { key: 'n',       meta: true,  shift: false },
+    'close-terminal': { key: 'w',       meta: true,  shift: false },
+    'maximize':       { key: 'Enter',   meta: true,  shift: true  },
+    'minimize':       { key: 'm',       meta: true,  shift: false },
+    'restore-all':    { key: 'm',       meta: true,  shift: true  },
+    'layout-mode':    { key: 'g',       meta: true,  shift: true  },
+    'prev-pane':      { key: '[',       meta: true,  shift: true  },
+    'next-pane':      { key: ']',       meta: true,  shift: true  },
+  };
+
+  const ACTIONS = {
+    'close-panel':    () => { if (isAnyPanelActive()) hidePanel(); else if (isFileViewerVisible()) hideFileViewer(); else return false; return true; },
+    'settings':       () => { togglePanel('settings'); return true; },
+    'sidebar-toggle': () => { document.getElementById('sidebar-toggle').click(); return true; },
+    'file-viewer':    () => { toggleFileViewer(sessions[focusedIndex]?.cwd); return true; },
+    'new-terminal':   () => { createSession(); return true; },
+    'close-terminal': () => { if (sessions.length > 0) removeSession(focusedIndex); return true; },
+    'maximize':       () => { if (sessions.length > 0) toggleMaximize(focusedIndex); return true; },
+    'minimize':       () => { if (sessions.length > 0) minimizeSession(focusedIndex); return true; },
+    'restore-all':    () => { restoreAllSessions(); return true; },
+    'layout-mode':    () => { toggleLayoutMode(); return true; },
+    'prev-pane':      () => { focusNextVisible(focusedIndex, -1); return true; },
+    'next-pane':      () => { focusNextVisible(focusedIndex, 1); return true; },
+  };
+
   document.addEventListener('keydown', (e) => {
-    // Escape — close config panel or file viewer
-    if (e.key === 'Escape') {
-      if (isAnyPanelActive()) {
-        e.preventDefault();
-        hidePanel();
-        return;
-      }
-      if (isFileViewerVisible()) {
-        e.preventDefault();
-        hideFileViewer();
-        return;
-      }
-    }
+    const bindings = getShortcutBindings() || DEFAULTS;
 
-    // Cmd+, — toggle settings (standard macOS)
-    if (e.metaKey && e.key === ',') {
-      e.preventDefault();
-      togglePanel('settings');
-      return;
-    }
-
-    // Cmd+B — toggle sidebar collapse
-    if (e.metaKey && !e.shiftKey && e.key === 'b') {
-      e.preventDefault();
-      document.getElementById('sidebar-toggle').click();
-      return;
-    }
-
-    // Cmd+Shift+E — toggle file viewer
-    if (e.metaKey && e.shiftKey && (e.key === 'e' || e.key === 'E')) {
-      e.preventDefault();
-      toggleFileViewer(sessions[focusedIndex]?.cwd);
-      return;
-    }
-
-    // Cmd+N — new terminal (instant, no form)
-    if (e.metaKey && !e.shiftKey && e.key === 'n') {
-      e.preventDefault();
-      createSession();
-    }
-
-    // Cmd+W — close focused
-    if (e.metaKey && !e.shiftKey && e.key === 'w') {
-      e.preventDefault();
-      if (sessions.length > 0) removeSession(focusedIndex);
-    }
-
-    // Cmd+1-9 — focus by position (auto-restore if minimized)
+    // Cmd+1-9 — always hardcoded (can't rebind per-number)
     if (e.metaKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
       e.preventDefault();
       const idx = parseInt(e.key) - 1;
@@ -728,25 +1543,24 @@ function setupShortcuts() {
         if (sessions[idx].minimized) restoreSession(idx);
         else setFocus(idx);
       }
+      return;
     }
 
-    // Cmd+Shift+Enter — maximize/restore focused pane
-    if (e.metaKey && e.shiftKey && e.key === 'Enter') {
-      e.preventDefault();
-      if (sessions.length > 0) toggleMaximize(focusedIndex);
+    // Check all configurable shortcuts
+    for (const [id, action] of Object.entries(ACTIONS)) {
+      const binding = bindings[id] || DEFAULTS[id];
+      if (!binding) continue;
+      const keyLower = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (keyLower === binding.key && e.metaKey === binding.meta && e.shiftKey === binding.shift) {
+        e.preventDefault();
+        if (action() !== false) return;
+      }
     }
+  });
 
-    // Cmd+Shift+[ — previous visible pane
-    if (e.metaKey && e.shiftKey && e.key === '[') {
-      e.preventDefault();
-      focusNextVisible(focusedIndex, -1);
-    }
-
-    // Cmd+Shift+] — next visible pane
-    if (e.metaKey && e.shiftKey && e.key === ']') {
-      e.preventDefault();
-      focusNextVisible(focusedIndex, 1);
-    }
+  // Reload when shortcuts change from settings
+  window.addEventListener('shortcuts-changed', () => {
+    // Bindings are read fresh on each keydown, so no action needed
   });
 }
 
@@ -760,20 +1574,45 @@ const STATUS_COLORS = {
   Exited: 'var(--status-exited)',
 };
 
-function maybeNotify(session, status) {
+async function maybeNotify(session, status) {
+  console.log('[notify]', status, 'windowFocused:', windowFocused);
   if (windowFocused) return;
   if (localStorage.getItem('ps-notifications') === 'false') return;
 
+  // Check per-status toggles
+  const statusToggleMap = {
+    WaitingForInput: 'ps-notify-waiting',
+    NeedsPermission: 'ps-notify-permission',
+    Exited: 'ps-notify-exited',
+  };
+  const toggleKey = statusToggleMap[status];
+  if (!toggleKey) return;
+  if (localStorage.getItem(toggleKey) === 'false') return;
+
   const messages = {
     WaitingForInput: 'is waiting for your input',
-    NeedsPermission: 'needs permission',
+    NeedsPermission: 'needs permission to continue',
     Exited: 'has finished',
   };
   const msg = messages[status];
   if (!msg) return;
 
-  if (Notification.permission === 'granted') {
-    new Notification('PaneStreet', { body: `${session.name} ${msg}`, silent: false });
+  try {
+    let granted = await invoke('plugin:notification|is_permission_granted');
+    if (!granted) {
+      const result = await invoke('plugin:notification|request_permission');
+      granted = result === 'granted';
+    }
+    if (granted) {
+      const options = { title: 'PaneStreet', body: `${session.name} ${msg}` };
+      if (localStorage.getItem('ps-notify-sound') !== 'false') options.sound = 'default';
+      await invoke('plugin:notification|notify', { options });
+      console.log('[notify] Sent native notification');
+    } else {
+      console.log('[notify] Permission not granted');
+    }
+  } catch (err) {
+    console.warn('[notify] Failed:', err);
   }
 }
 
@@ -1189,13 +2028,60 @@ function extractHint(memoryContent, projectName) {
 
 // --- Session Persistence ---
 
+// --- Resizable Panels ---
+
+function setupResizeHandles() {
+  setupResize('sidebar-resize', document.getElementById('sidebar'), 'right');
+  setupResize('fv-resize', document.getElementById('file-viewer'), 'left');
+}
+
+function setupResize(handleId, panel, side) {
+  const handle = document.getElementById(handleId);
+  if (!handle || !panel) return;
+
+  let startX, startWidth;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startX = e.clientX;
+    startWidth = panel.getBoundingClientRect().width;
+    handle.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    function onMove(e) {
+      const delta = side === 'right' ? e.clientX - startX : startX - e.clientX;
+      const newWidth = Math.max(140, Math.min(700, startWidth + delta));
+      panel.style.width = newWidth + 'px';
+      // Re-fit terminals as panel resizes
+      fitVisibleTerminals();
+    }
+
+    function onUp() {
+      handle.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      fitVisibleTerminals();
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 function saveSessionState() {
   const data = {
-    version: 1,
+    version: 2,
+    layoutMode,
+    snapToGrid,
+    gridSplitRatios,
     sessions: sessions.map(s => ({
       name: s.name,
       cwd: s.cwd,
       minimized: s.minimized,
+      freeformRect: s.freeformRect,
     })),
     focused_index: focusedIndex,
   };
@@ -1209,12 +2095,17 @@ function saveSessionState() {
 document.addEventListener('DOMContentLoaded', async () => {
   setupNewSessionButton();
   setupShortcuts();
+  setupResizeHandles();
   setupSidebarToggle();
   setupGitInfoClick();
   setupConfigButtons();
   setupStatusListener();
   initFileViewer();
   loadSavedTheme();
+  setupFreeformDrag();
+  setupFreeformResize();
+  setupGridGutterDrag();
+  createLayoutToggle();
 
   // Listen for terminal theme changes from the theme designer
   window.addEventListener('theme-terminal-changed', (e) => {
@@ -1223,6 +2114,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Re-fit terminals when file viewer opens/closes
   window.addEventListener('file-viewer-changed', () => {
+    requestAnimationFrame(() => fitVisibleTerminals());
+  });
+
+  // Refit terminals on app window resize
+  window.addEventListener('resize', () => {
+    if (layoutMode === 'freeform' && maximizedIndex === null) {
+      const grid = document.getElementById('pane-grid');
+      const gridRect = grid.getBoundingClientRect();
+      sessions.forEach(s => {
+        if (s.minimized || !s.freeformRect) return;
+        const r = s.freeformRect;
+        // Clamp position within grid bounds
+        r.x = Math.max(0, Math.min(r.x, gridRect.width - r.width));
+        r.y = Math.max(0, Math.min(r.y, gridRect.height - r.height));
+        // If pane is larger than grid, shrink it
+        if (r.width > gridRect.width) r.width = gridRect.width;
+        if (r.height > gridRect.height) r.height = gridRect.height;
+        s.pane.style.left = r.x + 'px';
+        s.pane.style.top = r.y + 'px';
+        s.pane.style.width = r.width + 'px';
+        s.pane.style.height = r.height + 'px';
+      });
+    }
+    // Always refit all visible terminals regardless of mode
     requestAnimationFrame(() => fitVisibleTerminals());
   });
 
@@ -1256,10 +2171,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Listen for robot toggle from settings
   window.addEventListener('robot-toggle', (e) => toggleRobot(e.detail));
 
-  // Request notification permission
-  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
+  // Notification permission is handled by tauri-plugin-notification on first use
 
   // Initialize mascot
   setupMascotSpeech();
@@ -1270,7 +2182,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const json = await invoke('load_sessions');
     if (json) {
       const data = JSON.parse(json);
-      if (data.version === 1 && data.sessions?.length > 0) {
+      if ((data.version === 1 || data.version === 2) && data.sessions?.length > 0) {
+        // Restore layout mode from v2 data
+        if (data.version === 2) {
+          layoutMode = data.layoutMode || 'auto';
+          snapToGrid = data.snapToGrid !== false;
+          if (data.gridSplitRatios) gridSplitRatios = data.gridSplitRatios;
+        }
+
         for (const saved of data.sessions) {
           await createSession(saved.cwd);
           const idx = sessions.length - 1;
@@ -1281,10 +2200,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (saved.minimized) {
             sessions[idx].minimized = true;
           }
+          if (saved.freeformRect) {
+            sessions[idx].freeformRect = saved.freeformRect;
+          }
         }
         rebuildSidebar();
         updateGridLayout();
         updateFooterPills();
+        updateLayoutToggleUI();
         if (data.focused_index >= 0 && data.focused_index < sessions.length) {
           setFocus(data.focused_index);
         }
@@ -1314,6 +2237,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (cwd && cwd !== session.cwd) {
         session.cwd = cwd;
         updateFileViewerCwd(cwd);
+        setFocusedCwd(cwd);
         updateGitInfo();
       }
     } catch (err) {

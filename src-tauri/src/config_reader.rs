@@ -190,6 +190,97 @@ pub fn save_memory_file(path: String, content: String) -> Result<(), String> {
     Ok(())
 }
 
+// --- Project Memories ---
+
+#[derive(Clone, Serialize)]
+pub struct MemoryFile {
+    pub name: String,
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct ProjectMemories {
+    pub project_path: String,
+    pub project_name: String,
+    pub claude_md: Option<String>,
+    pub claude_md_path: Option<String>,
+    pub memory_index: Option<String>,
+    pub memory_files: Vec<MemoryFile>,
+    pub global_claude_md: Option<String>,
+}
+
+#[tauri::command]
+pub fn read_project_memories(project_path: String) -> Result<ProjectMemories, String> {
+    let claude = claude_dir().ok_or("Could not find home directory")?;
+    let project = Path::new(&project_path);
+
+    let project_name = project
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    // Read global CLAUDE.md
+    let global_claude_md = std::fs::read_to_string(claude.join("CLAUDE.md")).ok();
+
+    // Find project CLAUDE.md (check multiple locations)
+    let (claude_md, claude_md_path) = {
+        let p1 = project.join("CLAUDE.md");
+        let p2 = project.join(".claude").join("CLAUDE.md");
+        if p1.exists() {
+            (std::fs::read_to_string(&p1).ok(), Some(p1.to_string_lossy().to_string()))
+        } else if p2.exists() {
+            (std::fs::read_to_string(&p2).ok(), Some(p2.to_string_lossy().to_string()))
+        } else {
+            (None, None)
+        }
+    };
+
+    // Read memory files from ~/.claude/projects/<encoded>/memory/
+    let encoded = encode_project_path(&project_path);
+    let memory_dir = claude.join("projects").join(&encoded).join("memory");
+
+    let memory_index = if memory_dir.join("MEMORY.md").exists() {
+        std::fs::read_to_string(memory_dir.join("MEMORY.md")).ok()
+    } else {
+        None
+    };
+
+    let mut memory_files = Vec::new();
+    if memory_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&memory_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name == "MEMORY.md" {
+                    continue; // Already read as index
+                }
+                let path = entry.path();
+                if path.is_file() {
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        memory_files.push(MemoryFile {
+                            name,
+                            path: path.to_string_lossy().to_string(),
+                            content,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    memory_files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    Ok(ProjectMemories {
+        project_path,
+        project_name,
+        claude_md,
+        claude_md_path,
+        memory_index,
+        memory_files,
+        global_claude_md,
+    })
+}
+
 // --- Session Persistence ---
 
 fn pane_street_dir() -> Option<PathBuf> {

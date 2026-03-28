@@ -4,6 +4,17 @@ let activePanel = null;
 let onHideCallback = null;
 let settingsDirty = false;
 let savedSettingsSnapshot = {};
+let focusedSessionCwd = null;
+
+export function setFocusedCwd(cwd) {
+  const changed = cwd !== focusedSessionCwd;
+  focusedSessionCwd = cwd;
+
+  // Auto-refresh memory panel if it's open and the project changed
+  if (changed && cwd && activePanel === 'memory') {
+    renderMemoryPanel();
+  }
+}
 
 // --- Panel Switching ---
 
@@ -102,6 +113,10 @@ function captureSettingsSnapshot() {
     gitShowDirty: localStorage.getItem('ps-git-show-dirty') ?? 'true',
     gitPoll: localStorage.getItem('ps-git-poll') || '5',
     notifications: localStorage.getItem('ps-notifications') ?? 'true',
+    notifyWaiting: localStorage.getItem('ps-notify-waiting') ?? 'true',
+    notifyPermission: localStorage.getItem('ps-notify-permission') ?? 'true',
+    notifyExited: localStorage.getItem('ps-notify-exited') ?? 'true',
+    notifySound: localStorage.getItem('ps-notify-sound') ?? 'true',
     robotEnabled: localStorage.getItem('ps-robot-enabled') ?? 'true',
   };
 }
@@ -118,6 +133,10 @@ function checkSettingsDirty() {
     gitShowDirty: String(container.querySelector('#pref-git-dirty')?.checked ?? true),
     gitPoll: container.querySelector('#pref-git-poll')?.value || '5',
     notifications: String(container.querySelector('#pref-notifications')?.checked ?? true),
+    notifyWaiting: String(container.querySelector('#pref-notify-waiting')?.checked ?? true),
+    notifyPermission: String(container.querySelector('#pref-notify-permission')?.checked ?? true),
+    notifyExited: String(container.querySelector('#pref-notify-exited')?.checked ?? true),
+    notifySound: String(container.querySelector('#pref-notify-sound')?.checked ?? true),
     robotEnabled: String(container.querySelector('#pref-robot')?.checked ?? true),
   };
   return JSON.stringify(current) !== JSON.stringify(savedSettingsSnapshot);
@@ -165,6 +184,7 @@ async function renderSettingsPanel() {
     </div>
     <div class="settings-tabs">
       <button class="settings-tab ${currentSettingsTab === 'general' ? 'active' : ''}" data-tab="general">General</button>
+      <button class="settings-tab ${currentSettingsTab === 'keys' ? 'active' : ''}" data-tab="keys">Keys</button>
       <button class="settings-tab ${currentSettingsTab === 'theme' ? 'active' : ''}" data-tab="theme">Theme</button>
       <button class="settings-tab ${currentSettingsTab === 'auth' ? 'active' : ''}" data-tab="auth">Auth</button>
       <button class="settings-tab ${currentSettingsTab === 'about' ? 'active' : ''}" data-tab="about">About</button>
@@ -217,6 +237,10 @@ async function renderSettingsTab(tab) {
     const gitShowDirty = localStorage.getItem('ps-git-show-dirty') !== 'false';
     const gitPollInterval = localStorage.getItem('ps-git-poll') || '5';
     const notificationsEnabled = localStorage.getItem('ps-notifications') !== 'false';
+    const notifyOnWaiting = localStorage.getItem('ps-notify-waiting') !== 'false';
+    const notifyOnPermission = localStorage.getItem('ps-notify-permission') !== 'false';
+    const notifyOnExited = localStorage.getItem('ps-notify-exited') !== 'false';
+    const notifySound = localStorage.getItem('ps-notify-sound') !== 'false';
     const robotEnabled = localStorage.getItem('ps-robot-enabled') !== 'false';
 
     container.innerHTML = `
@@ -305,16 +329,65 @@ async function renderSettingsTab(tab) {
 
       <div class="settings-group">
         <div class="setting-section-title">Notifications</div>
+
         <div class="setting-row-stacked">
           <div class="setting-row-inline">
             <div>
-              <div class="setting-label">Desktop notifications</div>
-              <div class="setting-description">Notify when a session needs input, permission, or finishes</div>
+              <div class="setting-label">Enable notifications</div>
+              <div class="setting-description">Show desktop notifications when the app is in the background</div>
             </div>
             <label class="setting-switch">
               <input type="checkbox" id="pref-notifications" ${notificationsEnabled ? 'checked' : ''} />
               <span class="setting-switch-slider"></span>
             </label>
+          </div>
+        </div>
+
+        <div class="setting-row-stacked notify-sub-settings" ${notificationsEnabled ? '' : 'style="opacity:0.4;pointer-events:none"'}>
+          <div class="setting-description" style="margin-bottom:8px;font-weight:500;color:var(--text-primary)">Notify me when...</div>
+
+          <div class="setting-row-inline" style="padding:4px 0">
+            <div class="setting-label">Session is waiting for input</div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-notify-waiting" ${notifyOnWaiting ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row-inline" style="padding:4px 0">
+            <div class="setting-label">Session needs permission</div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-notify-permission" ${notifyOnPermission ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row-inline" style="padding:4px 0">
+            <div class="setting-label">Session finishes / exits</div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-notify-exited" ${notifyOnExited ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+
+          <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px">
+            <div class="setting-row-inline">
+              <div>
+                <div class="setting-label">Sound</div>
+                <div class="setting-description">Play the system notification sound</div>
+              </div>
+              <label class="setting-switch">
+                <input type="checkbox" id="pref-notify-sound" ${notifySound ? 'checked' : ''} />
+                <span class="setting-switch-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div style="margin-top:12px">
+            <button class="setting-browse-btn" id="notify-test-btn" style="width:auto;padding:6px 16px">
+              Send test notification
+            </button>
+            <span class="notify-test-msg" id="notify-test-msg" style="margin-left:8px;font-size:var(--font-size-xs);color:var(--text-muted)"></span>
           </div>
         </div>
       </div>
@@ -386,6 +459,10 @@ async function renderSettingsTab(tab) {
       localStorage.setItem('ps-git-show-dirty', container.querySelector('#pref-git-dirty').checked);
       localStorage.setItem('ps-git-poll', gitPollEl.value);
       localStorage.setItem('ps-notifications', container.querySelector('#pref-notifications').checked);
+      localStorage.setItem('ps-notify-waiting', container.querySelector('#pref-notify-waiting').checked);
+      localStorage.setItem('ps-notify-permission', container.querySelector('#pref-notify-permission').checked);
+      localStorage.setItem('ps-notify-exited', container.querySelector('#pref-notify-exited').checked);
+      localStorage.setItem('ps-notify-sound', container.querySelector('#pref-notify-sound').checked);
       const robotChecked = container.querySelector('#pref-robot').checked;
       localStorage.setItem('ps-robot-enabled', robotChecked);
       window.dispatchEvent(new CustomEvent('robot-toggle', { detail: robotChecked }));
@@ -399,6 +476,46 @@ async function renderSettingsTab(tab) {
       msg.style.color = 'var(--status-idle)';
       setTimeout(() => { msg.textContent = ''; }, 3000);
     };
+
+    // Notifications master toggle enables/disables sub-settings
+    const notifToggle = container.querySelector('#pref-notifications');
+    const notifSub = container.querySelector('.notify-sub-settings');
+    notifToggle.addEventListener('change', () => {
+      notifSub.style.opacity = notifToggle.checked ? '' : '0.4';
+      notifSub.style.pointerEvents = notifToggle.checked ? '' : 'none';
+    });
+
+    // Test notification button
+    container.querySelector('#notify-test-btn').addEventListener('click', async () => {
+      const msgEl = container.querySelector('#notify-test-msg');
+      try {
+        const permCheck = await invoke('plugin:notification|is_permission_granted');
+        console.log('[notify-test] is_permission_granted:', permCheck);
+
+        let granted = permCheck;
+        if (!granted) {
+          const result = await invoke('plugin:notification|request_permission');
+          console.log('[notify-test] request_permission result:', result);
+          granted = result === 'granted' || result === true;
+        }
+
+        console.log('[notify-test] granted:', granted, '— sending...');
+
+        // Try sending regardless to see if it errors
+        const result = await invoke('plugin:notification|notify', {
+          options: { title: 'PaneStreet', body: 'This is a test notification. Looking good!' },
+        });
+        console.log('[notify-test] notify result:', result);
+
+        msgEl.textContent = `Sent (permission: ${permCheck}). Check your notifications.`;
+        msgEl.style.color = 'var(--status-idle)';
+      } catch (err) {
+        console.error('[notify-test] error:', err);
+        msgEl.textContent = 'Failed: ' + err;
+        msgEl.style.color = 'var(--status-exited)';
+      }
+      setTimeout(() => { msgEl.textContent = ''; }, 8000);
+    });
 
     // Track dirty state
     savedSettingsSnapshot = captureSettingsSnapshot();
@@ -475,6 +592,9 @@ async function renderSettingsTab(tab) {
       container.innerHTML = `<div class="empty-state">Failed to check auth status: ${err}</div>`;
     }
 
+  } else if (tab === 'keys') {
+    renderKeysTab(container);
+
   } else if (tab === 'theme') {
     renderThemeTab(container);
 
@@ -501,6 +621,187 @@ async function renderSettingsTab(tab) {
   }
 }
 
+// --- Keyboard Shortcuts ---
+
+const DEFAULT_SHORTCUTS = [
+  { id: 'close-panel',      label: 'Close panel / file viewer',    key: 'Escape',  meta: false, shift: false, category: 'Navigation' },
+  { id: 'settings',         label: 'Open settings',                key: ',',       meta: true,  shift: false, category: 'Navigation' },
+  { id: 'sidebar-toggle',   label: 'Toggle sidebar',               key: 'b',       meta: true,  shift: false, category: 'Navigation' },
+  { id: 'file-viewer',      label: 'Toggle file viewer',           key: 'e',       meta: true,  shift: true,  category: 'Navigation' },
+  { id: 'new-terminal',     label: 'New terminal',                 key: 'n',       meta: true,  shift: false, category: 'Sessions' },
+  { id: 'close-terminal',   label: 'Close terminal',               key: 'w',       meta: true,  shift: false, category: 'Sessions' },
+  { id: 'focus-1',          label: 'Focus terminal 1–9',           key: '1-9',     meta: true,  shift: false, category: 'Sessions' },
+  { id: 'maximize',         label: 'Maximize / restore pane',      key: 'Enter',   meta: true,  shift: true,  category: 'Windows' },
+  { id: 'minimize',         label: 'Minimize pane',                key: 'm',       meta: true,  shift: false, category: 'Windows' },
+  { id: 'restore-all',      label: 'Restore all minimized',        key: 'm',       meta: true,  shift: true,  category: 'Windows' },
+  { id: 'layout-mode',      label: 'Toggle grid / free-form',      key: 'g',       meta: true,  shift: true,  category: 'Windows' },
+  { id: 'prev-pane',        label: 'Previous pane',                key: '[',       meta: true,  shift: true,  category: 'Windows' },
+  { id: 'next-pane',        label: 'Next pane',                    key: ']',       meta: true,  shift: true,  category: 'Windows' },
+];
+
+function loadShortcuts() {
+  const saved = localStorage.getItem('ps-shortcuts');
+  if (!saved) return DEFAULT_SHORTCUTS.map(s => ({ ...s }));
+  try {
+    const parsed = JSON.parse(saved);
+    // Merge saved with defaults (in case new shortcuts added)
+    return DEFAULT_SHORTCUTS.map(def => {
+      const override = parsed.find(s => s.id === def.id);
+      return override ? { ...def, key: override.key, meta: override.meta, shift: override.shift } : { ...def };
+    });
+  } catch { return DEFAULT_SHORTCUTS.map(s => ({ ...s })); }
+}
+
+function saveShortcuts(shortcuts) {
+  localStorage.setItem('ps-shortcuts', JSON.stringify(shortcuts));
+  window.dispatchEvent(new CustomEvent('shortcuts-changed', { detail: shortcuts }));
+}
+
+function formatShortcut(s) {
+  const parts = [];
+  if (s.meta) parts.push('\u2318');
+  if (s.shift) parts.push('\u21E7');
+  if (s.key === 'Enter') parts.push('\u23CE');
+  else if (s.key === 'Escape') parts.push('Esc');
+  else if (s.key === '[') parts.push('[');
+  else if (s.key === ']') parts.push(']');
+  else if (s.key === ',') parts.push(',');
+  else if (s.key === '1-9') parts.push('1\u20139');
+  else parts.push(s.key.toUpperCase());
+  return parts.join('');
+}
+
+function renderKeysTab(container) {
+  const shortcuts = loadShortcuts();
+  const categories = [...new Set(shortcuts.map(s => s.category))];
+
+  let html = `
+    <div class="keys-header">
+      <div class="keys-header-text">
+        <div class="setting-section-title" style="margin-bottom:4px">Keyboard Shortcuts</div>
+        <div class="setting-description">Click any shortcut to rebind it. Press Escape to cancel.</div>
+      </div>
+      <button class="keys-reset-btn" id="keys-reset" title="Reset all to defaults">Reset All</button>
+    </div>
+  `;
+
+  categories.forEach(cat => {
+    const catShortcuts = shortcuts.filter(s => s.category === cat);
+    html += `<div class="keys-category">
+      <div class="keys-category-label">${cat}</div>
+      <div class="keys-list">`;
+
+    catShortcuts.forEach(s => {
+      const isCustom = (() => {
+        const def = DEFAULT_SHORTCUTS.find(d => d.id === s.id);
+        return def && (def.key !== s.key || def.meta !== s.meta || def.shift !== s.shift);
+      })();
+
+      html += `
+        <div class="keys-row" data-id="${s.id}">
+          <div class="keys-row-info">
+            <span class="keys-row-label">${s.label}</span>
+            ${isCustom ? '<span class="keys-modified-badge">modified</span>' : ''}
+          </div>
+          <div class="keys-row-binding">
+            <button class="keys-binding-btn" data-id="${s.id}" title="Click to rebind">
+              <span class="keys-binding-text">${formatShortcut(s)}</span>
+            </button>
+            ${isCustom ? `<button class="keys-revert-btn" data-id="${s.id}" title="Revert to default">\u21BA</button>` : ''}
+          </div>
+        </div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  container.innerHTML = html;
+
+  // Bind click handlers
+  container.querySelectorAll('.keys-binding-btn').forEach(btn => {
+    btn.addEventListener('click', () => startRebind(btn, shortcuts, container));
+  });
+
+  container.querySelectorAll('.keys-revert-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      const def = DEFAULT_SHORTCUTS.find(d => d.id === id);
+      const shortcut = shortcuts.find(s => s.id === id);
+      if (def && shortcut) {
+        shortcut.key = def.key;
+        shortcut.meta = def.meta;
+        shortcut.shift = def.shift;
+        saveShortcuts(shortcuts);
+        renderKeysTab(container);
+      }
+    });
+  });
+
+  container.querySelector('#keys-reset')?.addEventListener('click', () => {
+    localStorage.removeItem('ps-shortcuts');
+    saveShortcuts(DEFAULT_SHORTCUTS);
+    renderKeysTab(container);
+  });
+}
+
+function startRebind(btn, shortcuts, container) {
+  const id = btn.dataset.id;
+  const shortcut = shortcuts.find(s => s.id === id);
+  if (!shortcut || shortcut.id === 'focus-1') return; // Can't rebind 1-9
+
+  const textEl = btn.querySelector('.keys-binding-text');
+  const originalText = textEl.textContent;
+  textEl.textContent = 'Press keys\u2026';
+  btn.classList.add('recording');
+  btn.closest('.keys-row').classList.add('recording');
+
+  function onKey(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Ignore lone modifier keys
+    if (['Meta', 'Shift', 'Control', 'Alt'].includes(e.key)) return;
+
+    // Escape cancels
+    if (e.key === 'Escape' && !e.metaKey && !e.shiftKey) {
+      cleanup();
+      textEl.textContent = originalText;
+      btn.classList.remove('recording');
+      btn.closest('.keys-row').classList.remove('recording');
+      return;
+    }
+
+    // Check for conflict
+    const newKey = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const conflict = shortcuts.find(s =>
+      s.id !== id && s.key === newKey && s.meta === e.metaKey && s.shift === e.shiftKey
+    );
+
+    if (conflict) {
+      textEl.textContent = `Conflict: ${conflict.label}`;
+      textEl.style.color = 'var(--status-exited)';
+      setTimeout(() => {
+        textEl.textContent = 'Press keys\u2026';
+        textEl.style.color = '';
+      }, 1500);
+      return;
+    }
+
+    shortcut.key = newKey;
+    shortcut.meta = e.metaKey;
+    shortcut.shift = e.shiftKey;
+    saveShortcuts(shortcuts);
+    cleanup();
+    renderKeysTab(container);
+  }
+
+  function cleanup() {
+    document.removeEventListener('keydown', onKey, true);
+  }
+
+  document.addEventListener('keydown', onKey, true);
+}
+
 // --- Theme System ---
 
 const PRESET_THEMES = {
@@ -508,8 +809,8 @@ const PRESET_THEMES = {
     name: 'Dark',
     colors: {
       '--bg-app': '#1a1a1a', '--bg-sidebar': '#1e1e1e', '--bg-pane': '#111111', '--bg-header': '#1a1a1a',
-      '--bg-footer': '#1a1a1a', '--bg-card': '#2a2a2a', '--text-primary': '#cccccc', '--text-secondary': '#888888',
-      '--text-bright': '#ffffff', '--text-muted': '#555555', '--accent': '#2a6df0', '--accent-light': '#a8c8ff',
+      '--bg-footer': '#1a1a1a', '--bg-card': '#2a2a2a', '--text-primary': '#e0e0e0', '--text-secondary': '#b0b0b0',
+      '--text-bright': '#ffffff', '--text-muted': '#888888', '--accent': '#2a6df0', '--accent-light': '#a8c8ff',
     },
     terminal: {
       background: '#111111', foreground: '#cccccc', cursor: '#cccccc',
@@ -524,7 +825,7 @@ const PRESET_THEMES = {
     colors: {
       '--bg-app': '#0d1117', '--bg-sidebar': '#0f1419', '--bg-pane': '#0a0e14', '--bg-header': '#0d1117',
       '--bg-footer': '#0d1117', '--bg-card': '#161b22', '--text-primary': '#c9d1d9', '--text-secondary': '#8b949e',
-      '--text-bright': '#f0f6fc', '--text-muted': '#484f58', '--accent': '#58a6ff', '--accent-light': '#79c0ff',
+      '--text-bright': '#f0f6fc', '--text-muted': '#7d8590', '--accent': '#58a6ff', '--accent-light': '#79c0ff',
     },
     terminal: {
       background: '#0a0e14', foreground: '#c9d1d9', cursor: '#58a6ff',
@@ -539,7 +840,7 @@ const PRESET_THEMES = {
     colors: {
       '--bg-app': '#282a36', '--bg-sidebar': '#21222c', '--bg-pane': '#1e1f29', '--bg-header': '#282a36',
       '--bg-footer': '#282a36', '--bg-card': '#343746', '--text-primary': '#f8f8f2', '--text-secondary': '#6272a4',
-      '--text-bright': '#ffffff', '--text-muted': '#44475a', '--accent': '#bd93f9', '--accent-light': '#d6bcfa',
+      '--text-bright': '#ffffff', '--text-muted': '#7970a9', '--accent': '#bd93f9', '--accent-light': '#d6bcfa',
     },
     terminal: {
       background: '#1e1f29', foreground: '#f8f8f2', cursor: '#f8f8f2',
@@ -554,7 +855,7 @@ const PRESET_THEMES = {
     colors: {
       '--bg-app': '#2e3440', '--bg-sidebar': '#2b303b', '--bg-pane': '#272c36', '--bg-header': '#2e3440',
       '--bg-footer': '#2e3440', '--bg-card': '#3b4252', '--text-primary': '#d8dee9', '--text-secondary': '#81a1c1',
-      '--text-bright': '#eceff4', '--text-muted': '#4c566a', '--accent': '#88c0d0', '--accent-light': '#8fbcbb',
+      '--text-bright': '#eceff4', '--text-muted': '#7b88a1', '--accent': '#88c0d0', '--accent-light': '#8fbcbb',
     },
     terminal: {
       background: '#272c36', foreground: '#d8dee9', cursor: '#d8dee9',
@@ -568,8 +869,8 @@ const PRESET_THEMES = {
     name: 'Solarized Dark',
     colors: {
       '--bg-app': '#002b36', '--bg-sidebar': '#003440', '--bg-pane': '#001e26', '--bg-header': '#002b36',
-      '--bg-footer': '#002b36', '--bg-card': '#073642', '--text-primary': '#839496', '--text-secondary': '#657b83',
-      '--text-bright': '#fdf6e3', '--text-muted': '#586e75', '--accent': '#268bd2', '--accent-light': '#2aa198',
+      '--bg-footer': '#002b36', '--bg-card': '#073642', '--text-primary': '#93a1a1', '--text-secondary': '#7c8f8f',
+      '--text-bright': '#fdf6e3', '--text-muted': '#7c9198', '--accent': '#268bd2', '--accent-light': '#2aa198',
     },
     terminal: {
       background: '#001e26', foreground: '#839496', cursor: '#839496',
@@ -584,7 +885,7 @@ const PRESET_THEMES = {
     colors: {
       '--bg-app': '#282828', '--bg-sidebar': '#1d2021', '--bg-pane': '#1d2021', '--bg-header': '#282828',
       '--bg-footer': '#282828', '--bg-card': '#3c3836', '--text-primary': '#ebdbb2', '--text-secondary': '#a89984',
-      '--text-bright': '#fbf1c7', '--text-muted': '#665c54', '--accent': '#fe8019', '--accent-light': '#fabd2f',
+      '--text-bright': '#fbf1c7', '--text-muted': '#928374', '--accent': '#fe8019', '--accent-light': '#fabd2f',
     },
     terminal: {
       background: '#1d2021', foreground: '#ebdbb2', cursor: '#ebdbb2',
@@ -598,8 +899,8 @@ const PRESET_THEMES = {
     name: 'Tokyo Night',
     colors: {
       '--bg-app': '#1a1b26', '--bg-sidebar': '#16161e', '--bg-pane': '#13131a', '--bg-header': '#1a1b26',
-      '--bg-footer': '#1a1b26', '--bg-card': '#24283b', '--text-primary': '#a9b1d6', '--text-secondary': '#565f89',
-      '--text-bright': '#c0caf5', '--text-muted': '#3b4261', '--accent': '#7aa2f7', '--accent-light': '#bb9af7',
+      '--bg-footer': '#1a1b26', '--bg-card': '#24283b', '--text-primary': '#c0c8e8', '--text-secondary': '#7982ab',
+      '--text-bright': '#c0caf5', '--text-muted': '#737aa2', '--accent': '#7aa2f7', '--accent-light': '#bb9af7',
     },
     terminal: {
       background: '#13131a', foreground: '#a9b1d6', cursor: '#c0caf5',
@@ -613,8 +914,8 @@ const PRESET_THEMES = {
     name: 'One Dark',
     colors: {
       '--bg-app': '#282c34', '--bg-sidebar': '#21252b', '--bg-pane': '#1e2127', '--bg-header': '#282c34',
-      '--bg-footer': '#282c34', '--bg-card': '#2c313c', '--text-primary': '#abb2bf', '--text-secondary': '#5c6370',
-      '--text-bright': '#d7dae0', '--text-muted': '#4b5263', '--accent': '#61afef', '--accent-light': '#56b6c2',
+      '--bg-footer': '#282c34', '--bg-card': '#2c313c', '--text-primary': '#bcc3cf', '--text-secondary': '#7a8290',
+      '--text-bright': '#d7dae0', '--text-muted': '#7f848e', '--accent': '#61afef', '--accent-light': '#56b6c2',
     },
     terminal: {
       background: '#1e2127', foreground: '#abb2bf', cursor: '#528bff',
@@ -629,7 +930,7 @@ const PRESET_THEMES = {
     colors: {
       '--bg-app': '#1e1e2e', '--bg-sidebar': '#181825', '--bg-pane': '#11111b', '--bg-header': '#1e1e2e',
       '--bg-footer': '#1e1e2e', '--bg-card': '#313244', '--text-primary': '#cdd6f4', '--text-secondary': '#a6adc8',
-      '--text-bright': '#ffffff', '--text-muted': '#585b70', '--accent': '#cba6f7', '--accent-light': '#f5c2e7',
+      '--text-bright': '#ffffff', '--text-muted': '#7f849c', '--accent': '#cba6f7', '--accent-light': '#f5c2e7',
     },
     terminal: {
       background: '#11111b', foreground: '#cdd6f4', cursor: '#f5e0dc',
@@ -644,7 +945,7 @@ const PRESET_THEMES = {
     colors: {
       '--bg-app': '#191724', '--bg-sidebar': '#1f1d2e', '--bg-pane': '#13111e', '--bg-header': '#191724',
       '--bg-footer': '#191724', '--bg-card': '#26233a', '--text-primary': '#e0def4', '--text-secondary': '#908caa',
-      '--text-bright': '#ffffff', '--text-muted': '#6e6a86', '--accent': '#ebbcba', '--accent-light': '#f6c177',
+      '--text-bright': '#ffffff', '--text-muted': '#908caa', '--accent': '#ebbcba', '--accent-light': '#f6c177',
     },
     terminal: {
       background: '#13111e', foreground: '#e0def4', cursor: '#524f67',
@@ -652,6 +953,96 @@ const PRESET_THEMES = {
       blue: '#9ccfd8', magenta: '#c4a7e7', cyan: '#ebbcba', white: '#e0def4',
       brightBlack: '#6e6a86', brightRed: '#eb6f92', brightGreen: '#31748f', brightYellow: '#f6c177',
       brightBlue: '#9ccfd8', brightMagenta: '#c4a7e7', brightCyan: '#ebbcba', brightWhite: '#e0def4',
+    },
+  },
+  kanagawa: {
+    name: 'Kanagawa',
+    colors: {
+      '--bg-app': '#1f1f28', '--bg-sidebar': '#1a1a22', '--bg-pane': '#16161d', '--bg-header': '#1f1f28',
+      '--bg-footer': '#1f1f28', '--bg-card': '#2a2a37', '--text-primary': '#dcd7ba', '--text-secondary': '#a09f95',
+      '--text-bright': '#f2ecbc', '--text-muted': '#727169', '--accent': '#7e9cd8', '--accent-light': '#7fb4ca',
+    },
+    terminal: {
+      background: '#16161d', foreground: '#dcd7ba', cursor: '#c8c093',
+      black: '#16161d', red: '#c34043', green: '#76946a', yellow: '#c0a36e',
+      blue: '#7e9cd8', magenta: '#957fb8', cyan: '#6a9589', white: '#c8c093',
+      brightBlack: '#727169', brightRed: '#e82424', brightGreen: '#98bb6c', brightYellow: '#e6c384',
+      brightBlue: '#7fb4ca', brightMagenta: '#938aa9', brightCyan: '#7aa89f', brightWhite: '#dcd7ba',
+    },
+  },
+  everforest: {
+    name: 'Everforest',
+    colors: {
+      '--bg-app': '#2d353b', '--bg-sidebar': '#272e33', '--bg-pane': '#232a2e', '--bg-header': '#2d353b',
+      '--bg-footer': '#2d353b', '--bg-card': '#374145', '--text-primary': '#d3c6aa', '--text-secondary': '#9da9a0',
+      '--text-bright': '#e6ddc4', '--text-muted': '#7a8478', '--accent': '#a7c080', '--accent-light': '#83c092',
+    },
+    terminal: {
+      background: '#232a2e', foreground: '#d3c6aa', cursor: '#d3c6aa',
+      black: '#343f44', red: '#e67e80', green: '#a7c080', yellow: '#dbbc7f',
+      blue: '#7fbbb3', magenta: '#d699b6', cyan: '#83c092', white: '#d3c6aa',
+      brightBlack: '#4d5960', brightRed: '#e67e80', brightGreen: '#a7c080', brightYellow: '#dbbc7f',
+      brightBlue: '#7fbbb3', brightMagenta: '#d699b6', brightCyan: '#83c092', brightWhite: '#e6ddc4',
+    },
+  },
+  synthwave: {
+    name: 'Synthwave 84',
+    colors: {
+      '--bg-app': '#262335', '--bg-sidebar': '#211e2e', '--bg-pane': '#1b182a', '--bg-header': '#262335',
+      '--bg-footer': '#262335', '--bg-card': '#312c42', '--text-primary': '#e0d8f0', '--text-secondary': '#a599c4',
+      '--text-bright': '#ffffff', '--text-muted': '#8673a8', '--accent': '#ff7edb', '--accent-light': '#36f9f6',
+    },
+    terminal: {
+      background: '#1b182a', foreground: '#e0d8f0', cursor: '#ff7edb',
+      black: '#262335', red: '#fe4450', green: '#72f1b8', yellow: '#fede5d',
+      blue: '#36f9f6', magenta: '#ff7edb', cyan: '#36f9f6', white: '#f0e8ff',
+      brightBlack: '#614d85', brightRed: '#fe4450', brightGreen: '#72f1b8', brightYellow: '#f3e70f',
+      brightBlue: '#03edf9', brightMagenta: '#ff7edb', brightCyan: '#03edf9', brightWhite: '#ffffff',
+    },
+  },
+  ayu: {
+    name: 'Ayu Dark',
+    colors: {
+      '--bg-app': '#0b0e14', '--bg-sidebar': '#0d1017', '--bg-pane': '#090c10', '--bg-header': '#0b0e14',
+      '--bg-footer': '#0b0e14', '--bg-card': '#131721', '--text-primary': '#bfbdb6', '--text-secondary': '#8b8a85',
+      '--text-bright': '#e6e1cf', '--text-muted': '#6c6f75', '--accent': '#e6b450', '--accent-light': '#ffb454',
+    },
+    terminal: {
+      background: '#090c10', foreground: '#bfbdb6', cursor: '#e6b450',
+      black: '#0b0e14', red: '#d95757', green: '#7fd962', yellow: '#e6b450',
+      blue: '#59c2ff', magenta: '#d2a6ff', cyan: '#95e6cb', white: '#bfbdb6',
+      brightBlack: '#475258', brightRed: '#f07178', brightGreen: '#aad94c', brightYellow: '#ffb454',
+      brightBlue: '#73b8ff', brightMagenta: '#dfbfff', brightCyan: '#95e6cb', brightWhite: '#e6e1cf',
+    },
+  },
+  horizon: {
+    name: 'Horizon',
+    colors: {
+      '--bg-app': '#1c1e26', '--bg-sidebar': '#1a1c23', '--bg-pane': '#16171d', '--bg-header': '#1c1e26',
+      '--bg-footer': '#1c1e26', '--bg-card': '#232530', '--text-primary': '#d5d8e0', '--text-secondary': '#9da0a8',
+      '--text-bright': '#ffffff', '--text-muted': '#6c6f93', '--accent': '#e95678', '--accent-light': '#fab795',
+    },
+    terminal: {
+      background: '#16171d', foreground: '#d5d8e0', cursor: '#e95678',
+      black: '#1c1e26', red: '#e95678', green: '#29d398', yellow: '#fab795',
+      blue: '#26bbd9', magenta: '#ee64ac', cyan: '#59e3e3', white: '#d5d8e0',
+      brightBlack: '#6c6f93', brightRed: '#ec6a88', brightGreen: '#3fdaa4', brightYellow: '#fbc3a7',
+      brightBlue: '#3fc6de', brightMagenta: '#f075b7', brightCyan: '#6be6e6', brightWhite: '#ffffff',
+    },
+  },
+  moonlight: {
+    name: 'Moonlight',
+    colors: {
+      '--bg-app': '#1e2030', '--bg-sidebar': '#191a2a', '--bg-pane': '#141526', '--bg-header': '#1e2030',
+      '--bg-footer': '#1e2030', '--bg-card': '#2b2d42', '--text-primary': '#c8d3f5', '--text-secondary': '#a0a8cd',
+      '--text-bright': '#e4f0fb', '--text-muted': '#7a7e9e', '--accent': '#82aaff', '--accent-light': '#c3e88d',
+    },
+    terminal: {
+      background: '#141526', foreground: '#c8d3f5', cursor: '#82aaff',
+      black: '#1e2030', red: '#ff757f', green: '#c3e88d', yellow: '#ffc777',
+      blue: '#82aaff', magenta: '#c099ff', cyan: '#86e1fc', white: '#c8d3f5',
+      brightBlack: '#545c7e', brightRed: '#ff98a4', brightGreen: '#c3e88d', brightYellow: '#ffc777',
+      brightBlue: '#82aaff', brightMagenta: '#c099ff', brightCyan: '#86e1fc', brightWhite: '#e4f0fb',
     },
   },
 };
@@ -671,6 +1062,10 @@ export function applyTheme(themeData) {
   if (themeData.colors) {
     for (const [prop, value] of Object.entries(themeData.colors)) {
       document.documentElement.style.setProperty(prop, value);
+    }
+    // Titlebar follows header color for theme consistency
+    if (themeData.colors['--bg-header']) {
+      document.documentElement.style.setProperty('--bg-titlebar', themeData.colors['--bg-header']);
     }
   }
   // Dispatch terminal theme update event
@@ -984,54 +1379,155 @@ async function renderMemoryPanel() {
 
   panel.querySelector('.config-back-btn').onclick = hidePanel;
 
+  const cwd = focusedSessionCwd;
+  const content = panel.querySelector('#memory-content');
+
+  if (!cwd) {
+    content.innerHTML = `<div class="empty-state">No active terminal directory. Open a terminal first.</div>`;
+    return;
+  }
+
   try {
-    const config = await invoke('read_claude_config', { projectPath: null });
-    const content = panel.querySelector('#memory-content');
+    const mem = await invoke('read_project_memories', { projectPath: cwd });
+
+    const projectLabel = mem.project_name || cwd.split('/').pop();
+
+    // Build memory file list
+    let memoryFilesHtml = '';
+    if (mem.memory_files.length > 0) {
+      memoryFilesHtml = mem.memory_files.map((f, i) => {
+        // Parse frontmatter for description
+        const descMatch = f.content.match(/^---[\s\S]*?description:\s*(.+)$/m);
+        const typeMatch = f.content.match(/^---[\s\S]*?type:\s*(.+)$/m);
+        const desc = descMatch ? descMatch[1].trim() : '';
+        const type = typeMatch ? typeMatch[1].trim() : '';
+        const typeLabel = type ? `<span class="memory-type-badge memory-type-${type}">${type}</span>` : '';
+        return `
+          <div class="memory-file-card" data-idx="${i}">
+            <div class="memory-file-header">
+              <span class="memory-file-name">${escapeForHtml(f.name)}</span>
+              ${typeLabel}
+            </div>
+            ${desc ? `<div class="memory-file-desc">${escapeForHtml(desc)}</div>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
 
     content.innerHTML = `
-      <div class="memory-section">
-        <h3>Global CLAUDE.md</h3>
-        <textarea class="memory-editor" id="memory-global" placeholder="No global CLAUDE.md found. Content saved here will be written to ~/.claude/CLAUDE.md">${config.global_memory || ''}</textarea>
-        <button class="memory-save-btn" id="memory-save-global">Save Global</button>
+      <div class="memory-project-header">
+        <span class="memory-project-icon">\u{1F4C1}</span>
+        <span class="memory-project-name">${escapeForHtml(projectLabel)}</span>
+        <span class="memory-project-path">${escapeForHtml(cwd)}</span>
       </div>
+
       <div class="memory-section">
-        <h3>Project CLAUDE.md</h3>
-        <textarea class="memory-editor" id="memory-project" placeholder="No project CLAUDE.md found for the focused session.">${config.project_memory || ''}</textarea>
-        <div class="setting-description" style="margin-top:4px">Project memory is determined by the focused session's working directory.</div>
+        <div class="memory-section-header">
+          <h3>Project CLAUDE.md</h3>
+          ${mem.claude_md_path ? `<span class="memory-file-path-hint">${escapeForHtml(mem.claude_md_path)}</span>` : ''}
+        </div>
+        <textarea class="memory-editor" id="memory-project" placeholder="No CLAUDE.md found for this project. Create one to give Claude project-specific instructions.">${escapeForHtml(mem.claude_md || '')}</textarea>
+        <div class="memory-editor-actions">
+          <button class="memory-save-btn" id="memory-save-project">Save</button>
+        </div>
+      </div>
+
+      ${mem.memory_files.length > 0 ? `
+        <div class="memory-section">
+          <h3>Claude Memories (${mem.memory_files.length})</h3>
+          <div class="setting-description" style="margin-bottom:8px">Memories Claude has saved about this project, your preferences, and context.</div>
+          <div class="memory-file-list">${memoryFilesHtml}</div>
+        </div>
+      ` : `
+        <div class="memory-section">
+          <h3>Claude Memories</h3>
+          <div class="empty-state" style="padding:12px 0">No memories saved for this project yet. Claude creates these automatically as you work together.</div>
+        </div>
+      `}
+
+      ${mem.memory_index ? `
+        <div class="memory-section">
+          <h3>Memory Index</h3>
+          <pre class="memory-index-view">${escapeForHtml(mem.memory_index)}</pre>
+        </div>
+      ` : ''}
+
+      <div class="memory-section memory-section-global">
+        <h3>Global CLAUDE.md</h3>
+        <div class="setting-description" style="margin-bottom:6px">Instructions that apply to all projects (~/.claude/CLAUDE.md)</div>
+        <textarea class="memory-editor" id="memory-global" placeholder="No global CLAUDE.md found.">${escapeForHtml(mem.global_claude_md || '')}</textarea>
+        <div class="memory-editor-actions">
+          <button class="memory-save-btn" id="memory-save-global">Save</button>
+        </div>
       </div>
     `;
 
-    // Save global memory
+    // Expand memory file cards to show full content
+    content.querySelectorAll('.memory-file-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const idx = parseInt(card.dataset.idx);
+        const file = mem.memory_files[idx];
+        if (!file) return;
+        // Toggle expanded view
+        const existing = card.querySelector('.memory-file-content');
+        if (existing) {
+          existing.remove();
+          card.classList.remove('expanded');
+        } else {
+          const pre = document.createElement('pre');
+          pre.className = 'memory-file-content';
+          pre.textContent = file.content;
+          card.appendChild(pre);
+          card.classList.add('expanded');
+        }
+      });
+    });
+
+    // Save project CLAUDE.md
+    content.querySelector('#memory-save-project').onclick = async () => {
+      const text = content.querySelector('#memory-project').value;
+      const savePath = mem.claude_md_path || (cwd + '/CLAUDE.md');
+      try {
+        await invoke('save_memory_file', { path: savePath, content: text });
+        flashButton(content.querySelector('#memory-save-project'));
+      } catch (err) {
+        console.error('Failed to save project memory:', err);
+      }
+    };
+
+    // Save global CLAUDE.md
     content.querySelector('#memory-save-global').onclick = async () => {
       const text = content.querySelector('#memory-global').value;
       try {
-        const homePath = '~/.claude/CLAUDE.md';
-        // We need the actual path — use dirs on backend
-        // For now, construct it client-side
-        await invoke('save_memory_file', {
-          path: (await getHomePath()) + '/.claude/CLAUDE.md',
-          content: text,
-        });
-        const btn = content.querySelector('#memory-save-global');
-        btn.textContent = 'Saved!';
-        setTimeout(() => btn.textContent = 'Save Global', 1500);
+        const home = await getHomePath();
+        await invoke('save_memory_file', { path: home + '/.claude/CLAUDE.md', content: text });
+        flashButton(content.querySelector('#memory-save-global'));
       } catch (err) {
-        console.error('Failed to save memory:', err);
+        console.error('Failed to save global memory:', err);
       }
     };
 
   } catch (err) {
-    panel.querySelector('#memory-content').innerHTML = `<div class="empty-state">Failed to load: ${err}</div>`;
+    content.innerHTML = `<div class="empty-state">Failed to load: ${err}</div>`;
   }
 }
 
-// Helper to get home path (we'll derive from known paths)
+function flashButton(btn) {
+  if (!btn) return;
+  const orig = btn.textContent;
+  btn.textContent = 'Saved!';
+  btn.style.background = 'var(--status-idle)';
+  setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 1500);
+}
+
+function escapeForHtml(text) {
+  return (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 async function getHomePath() {
-  // Use the Tauri path API if available, otherwise infer from settings location
   try {
     const path = window.__TAURI__.path;
-    if (path?.homeDir) return await path.homeDir();
+    if (path?.homeDir) return (await path.homeDir()).replace(/\/$/, '');
   } catch {}
-  // Fallback: most macOS systems
-  return '/Users/' + (await invoke('read_claude_config', { projectPath: null })).settings_raw?.env?.USER || 'user';
+  return '/Users/' + (navigator.userAgent.includes('Mac') ? require('os')?.userInfo?.()?.username : 'user');
 }

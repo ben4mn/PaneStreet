@@ -10,11 +10,14 @@
 <body>
   <div id="app">
     <div id="sidebar">
-      <button id="new-session-btn"><span class="btn-icon">+</span><span class="btn-text"> New Terminal</span></button>
+      <div class="resize-handle resize-handle-right" id="sidebar-resize"></div>
       <div id="sidebar-header">
         <h2>Sessions</h2>
-        <button id="sidebar-toggle" title="Collapse sidebar">&#8249;</button>
+        <div id="sidebar-header-actions">
+          <button id="sidebar-toggle" class="sidebar-header-btn" title="Collapse sidebar">&#8249;</button>
+        </div>
       </div>
+      <button id="new-session-btn"><span class="btn-icon">+</span><span class="btn-text"> New Terminal</span></button>
       <div id="session-list"></div>
       <div id="sidebar-actions">
         <button id="config-plugins-btn" data-icon="&#9881;"><span class="btn-text">Plugins</span></button>
@@ -24,31 +27,39 @@
       </div>
     </div>
     <div id="main">
+      <div id="toolbar">
+        <div id="toolbar-left">
+          <div id="toolbar-layout-toggle"></div>
+        </div>
+        <div id="toolbar-right">
+          <button id="fv-toggle-btn" class="toolbar-btn" title="Toggle file viewer (&#8984;&#8679;E)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3.5A1.5 1.5 0 013.5 2h3l2 2h4A1.5 1.5 0 0114 5.5v7a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 12.5z"/></svg> <span class="toolbar-btn-label">Files</span></button>
+        </div>
+      </div>
       <div id="content-area">
         <div id="pane-grid"></div>
         <div id="settings-panel" class="config-panel" style="display:none"></div>
         <div id="plugins-panel" class="config-panel" style="display:none"></div>
         <div id="mcps-panel" class="config-panel" style="display:none"></div>
         <div id="memory-panel" class="config-panel" style="display:none"></div>
-        <div id="file-viewer" style="display:none" tabindex="0">
-          <div class="file-viewer-header">
-            <button id="fv-back" class="fv-nav-btn" title="Go to parent directory">&#8593;</button>
-            <span class="file-viewer-path" id="fv-path"></span>
-            <div class="file-viewer-actions">
-              <button id="fv-toggle-view" class="fv-action-btn" title="Toggle rendered/raw" style="display:none">Raw</button>
-              <button id="fv-open-default" class="fv-action-btn" title="Open with default app" style="display:none">Open</button>
-              <button id="fv-finder" class="fv-action-btn" title="Open in Finder">Finder</button>
-              <button id="fv-close" class="fv-action-btn" title="Close">&times;</button>
-            </div>
+      </div>
+      <div id="file-viewer" style="display:none" tabindex="0">
+        <div class="resize-handle resize-handle-left" id="fv-resize"></div>
+        <div class="file-viewer-header">
+          <button id="fv-back" class="fv-nav-btn" title="Go to parent directory">&#8593;</button>
+          <span class="file-viewer-path" id="fv-path"></span>
+          <div class="file-viewer-actions">
+            <button id="fv-toggle-view" class="fv-action-btn" title="Toggle rendered/raw" style="display:none">Raw</button>
+            <button id="fv-open-default" class="fv-action-btn" title="Open with default app" style="display:none">Open</button>
+            <button id="fv-finder" class="fv-action-btn" title="Open in Finder">Finder</button>
+            <button id="fv-close" class="fv-action-btn" title="Close">&times;</button>
           </div>
-          <div class="file-viewer-tree" id="fv-tree"></div>
-          <div class="file-viewer-content" id="fv-content" style="display:none"></div>
         </div>
+        <div class="file-viewer-tree" id="fv-tree"></div>
+        <div class="file-viewer-content" id="fv-content" style="display:none"></div>
       </div>
       <div id="footer">
         <span id="footer-git"></span>
         <span id="footer-pills"></span>
-        <button id="fv-toggle-btn" class="footer-fv-btn" title="Toggle file viewer (&#8984;&#8679;E)">&#128194;</button>
       </div>
     </div>
   </div>

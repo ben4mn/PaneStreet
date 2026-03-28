@@ -8,13 +8,32 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "security": {
+      "capabilities": [
+        {
+          "identifier": "default",
+          "windows": ["*"],
+          "permissions": [
+            "core:default",
+            "opener:default",
+            "dialog:default",
+            "notification:default",
+            "notification:allow-notify",
+            "notification:allow-request-permission",
+            "notification:allow-is-permission-granted"
+          ]
+        }
+      ]
+    },
     "windows": [
       {
         "title": "Pane Street",
         "width": 1400,
         "height": 900,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ]
   },

@@ -32,7 +32,12 @@ export function toggleFileViewer(latestCwd) {
 
 export function showFileViewer(cwd) {
   const viewer = document.getElementById('file-viewer');
+  // Slide in from right
+  viewer.classList.add('closing');
   viewer.style.display = 'flex';
+  // Force reflow so the closing position registers before we animate in
+  viewer.offsetHeight; // eslint-disable-line no-unused-expressions
+  viewer.classList.remove('closing');
   viewerVisible = true;
   document.getElementById('fv-toggle-btn').classList.add('active');
 
@@ -53,22 +58,24 @@ export function showFileViewer(cwd) {
 
   // Dispatch event so app.js can push fresh CWD
   window.dispatchEvent(new CustomEvent('file-viewer-opened'));
-
-  // Re-fit terminals after layout change
-  requestAnimationFrame(() => {
-    window.dispatchEvent(new CustomEvent('file-viewer-changed'));
-  });
 }
 
 export function hideFileViewer() {
   const viewer = document.getElementById('file-viewer');
-  viewer.style.display = 'none';
   viewerVisible = false;
   document.getElementById('fv-toggle-btn').classList.remove('active');
 
-  requestAnimationFrame(() => {
-    window.dispatchEvent(new CustomEvent('file-viewer-changed'));
-  });
+  // Slide out to right
+  viewer.classList.add('closing');
+  const onEnd = () => {
+    viewer.removeEventListener('transitionend', onEnd);
+    if (!viewerVisible) {
+      viewer.style.display = 'none';
+    }
+  };
+  viewer.addEventListener('transitionend', onEnd);
+  // Fallback if transition doesn't fire
+  setTimeout(() => { if (!viewerVisible) viewer.style.display = 'none'; }, 300);
 }
 
 export function updateFileViewerCwd(cwd) {
@@ -327,23 +334,79 @@ function renderCodeContent(text, ext, container) {
   const pre = document.createElement('pre');
   pre.className = 'fv-code-view';
 
+  const lang = (ext || '').toLowerCase();
   const lines = text.split('\n');
   const gutterWidth = String(lines.length).length;
 
   let html = '';
   for (let i = 0; i < lines.length; i++) {
     const lineNum = String(i + 1).padStart(gutterWidth, ' ');
-    const escapedLine = escapeHtml(lines[i]);
-    html += `<span class="fv-line"><span class="fv-line-num">${lineNum}</span>${escapedLine}\n</span>`;
+    const highlighted = highlightLine(escapeHtml(lines[i]), lang);
+    html += `<span class="fv-line"><span class="fv-line-num">${lineNum}</span>${highlighted}\n</span>`;
   }
 
   pre.innerHTML = html;
-
-  // Apply basic syntax coloring via CSS classes based on extension
-  pre.dataset.lang = (ext || '').toLowerCase();
+  pre.dataset.lang = lang;
 
   container.innerHTML = '';
+
+  // Back-to-tree button
+  const backBtn = document.createElement('button');
+  backBtn.className = 'fv-back-to-tree';
+  backBtn.textContent = '\u2190 Back to files';
+  backBtn.addEventListener('click', () => {
+    selectedFile = null;
+    showTree();
+  });
+  container.appendChild(backBtn);
   container.appendChild(pre);
+}
+
+// --- Syntax Highlighting ---
+
+const SYN_KEYWORDS_JS = '\\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|new|delete|typeof|instanceof|in|of|class|extends|super|import|export|from|default|async|await|try|catch|finally|throw|this|null|undefined|true|false|yield)\\b';
+const SYN_KEYWORDS_RUST = '\\b(fn|let|mut|const|pub|use|mod|struct|enum|impl|trait|where|for|while|loop|if|else|match|return|break|continue|as|in|ref|self|Self|super|crate|type|static|async|await|move|unsafe|extern|true|false|None|Some|Ok|Err)\\b';
+const SYN_KEYWORDS_PY = '\\b(def|class|return|if|elif|else|for|while|break|continue|import|from|as|try|except|finally|raise|with|yield|lambda|pass|del|global|nonlocal|assert|True|False|None|in|not|and|or|is|async|await|self)\\b';
+const SYN_KEYWORDS_CSS = '\\b(import|media|keyframes|from|to)\\b';
+const SYN_KEYWORDS_GO = '\\b(func|var|const|type|struct|interface|map|chan|go|select|case|default|if|else|for|range|return|break|continue|switch|package|import|defer|nil|true|false|make|len|append|cap)\\b';
+
+function getKeywordsPattern(lang) {
+  if (['js', 'jsx', 'ts', 'tsx', 'mjs'].includes(lang)) return SYN_KEYWORDS_JS;
+  if (lang === 'rs') return SYN_KEYWORDS_RUST;
+  if (lang === 'py') return SYN_KEYWORDS_PY;
+  if (lang === 'css' || lang === 'scss') return SYN_KEYWORDS_CSS;
+  if (lang === 'go') return SYN_KEYWORDS_GO;
+  // Fallback: common keywords across languages
+  return '\\b(function|return|if|else|for|while|class|import|export|const|let|var|true|false|null|def|fn|pub|use)\\b';
+}
+
+function highlightLine(escaped, lang) {
+  const kw = getKeywordsPattern(lang);
+
+  // Order matters: comments first, then strings, then keywords, then numbers
+  let result = escaped;
+
+  // Single-line comments (// or #)
+  result = result.replace(/(\/\/.*$|#.*$)/gm, '<span class="syn-comment">$1</span>');
+
+  // Strings (double and single quoted) — simple, non-greedy
+  result = result.replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)/g, '<span class="syn-string">$1</span>');
+  result = result.replace(/(&#39;(?:[^&]|&(?!#39;))*?&#39;)/g, '<span class="syn-string">$1</span>');
+  // Backtick strings for JS
+  result = result.replace(/(`[^`]*`)/g, '<span class="syn-string">$1</span>');
+
+  // Keywords (only if not inside a comment/string span already)
+  result = result.replace(new RegExp(kw, 'g'), (m) => {
+    return `<span class="syn-keyword">${m}</span>`;
+  });
+
+  // Numbers
+  result = result.replace(/\b(\d+\.?\d*)\b/g, '<span class="syn-number">$1</span>');
+
+  // Function calls: word followed by (
+  result = result.replace(/\b([a-zA-Z_]\w*)\s*(?=\()/g, '<span class="syn-func">$1</span>');
+
+  return result;
 }
 
 function renderMarkdownContent(text, container) {

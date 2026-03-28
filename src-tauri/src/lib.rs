@@ -10,6 +10,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             pty_manager::spawn_pty,
             pty_manager::write_to_pty,
@@ -21,6 +22,7 @@ pub fn run() {
             worktree_manager::cleanup_worktree,
             config_reader::read_claude_config,
             config_reader::save_claude_settings,
+            config_reader::read_project_memories,
             config_reader::read_memory_file,
             config_reader::save_memory_file,
             config_reader::save_sessions,
