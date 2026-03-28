@@ -1528,8 +1528,8 @@ function setupShortcuts() {
     'minimize':       () => { if (sessions.length > 0) minimizeSession(focusedIndex); return true; },
     'restore-all':    () => { restoreAllSessions(); return true; },
     'layout-mode':    () => { toggleLayoutMode(); return true; },
-    'prev-pane':      () => { focusNextVisible(focusedIndex, -1); return true; },
-    'next-pane':      () => { focusNextVisible(focusedIndex, 1); return true; },
+    'prev-pane':      () => { if (isAnyPanelActive()) hidePanel(); focusNextVisible(focusedIndex, -1); return true; },
+    'next-pane':      () => { if (isAnyPanelActive()) hidePanel(); focusNextVisible(focusedIndex, 1); return true; },
   };
 
   document.addEventListener('keydown', (e) => {
@@ -1540,6 +1540,8 @@ function setupShortcuts() {
       e.preventDefault();
       const idx = parseInt(e.key) - 1;
       if (idx < sessions.length) {
+        // Close any open panel first to return to terminal view
+        if (isAnyPanelActive()) hidePanel();
         if (sessions[idx].minimized) restoreSession(idx);
         else setFocus(idx);
       }

@@ -90,31 +90,48 @@ pub fn read_claude_config(project_path: Option<String>) -> Result<ClaudeConfigSn
         }
     }
 
-    // Extract MCP servers from settings
+    // Extract MCP servers from settings.json and ~/.claude.json
     let mut mcp_servers = Vec::new();
-    if let Some(servers) = settings_raw.get("mcpServers").and_then(|v| v.as_object()) {
-        for (name, config) in servers {
-            let command = config
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
+    let mut seen_names = std::collections::HashSet::new();
 
-            let args = config
-                .get("args")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
+    // Check both sources for mcpServers
+    let home = dirs::home_dir();
+    let claude_json_raw = home.as_ref()
+        .and_then(|h| read_json_file(&h.join(".claude.json")));
 
-            mcp_servers.push(McpServerEntry {
-                name: name.clone(),
-                command,
-                args,
-            });
+    let mcp_sources: Vec<&Value> = [
+        Some(&settings_raw),
+        claude_json_raw.as_ref(),
+    ].into_iter().flatten().collect();
+
+    for source in mcp_sources {
+        if let Some(servers) = source.get("mcpServers").and_then(|v| v.as_object()) {
+            for (name, config) in servers {
+                if seen_names.contains(name) { continue; }
+                seen_names.insert(name.clone());
+
+                let command = config
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let args = config
+                    .get("args")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                mcp_servers.push(McpServerEntry {
+                    name: name.clone(),
+                    command,
+                    args,
+                });
+            }
         }
     }
 
