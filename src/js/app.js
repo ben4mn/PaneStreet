@@ -2033,6 +2033,10 @@ const ACTIVITIES = [
   { name: 'dance',   cls: 'act-dance',   duration: [4, 7] },
   { name: 'type',    cls: 'act-type',    duration: [10, 18] },
   { name: 'bounce',  cls: 'act-bounce',  duration: [3, 5] },
+  { name: 'sweep',   cls: 'act-sweep',   duration: [8, 14],  speech: 'Tidying up...' },
+  { name: 'phone',   cls: 'act-phone',   duration: [10, 20], speech: 'Mhm... mhm...' },
+  { name: 'code',    cls: 'act-code',    duration: [12, 22], speech: 'Coding...' },
+  { name: 'mop',     cls: 'act-mop',     duration: [8, 14] },
 ];
 
 const APP_TIPS = [

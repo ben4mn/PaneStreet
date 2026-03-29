@@ -207,7 +207,7 @@ html, body {
 
 #sidebar.collapsed #new-session-btn .btn-icon {
   font-size: 16px;
-  color: #4ade80;
+  color: var(--accent-light);
 }
 
 #sidebar.collapsed .session-card {
@@ -276,9 +276,9 @@ html, body {
 #new-session-btn {
   width: 100%;
   padding: 7px 10px;
-  background: rgba(74, 222, 128, 0.12);
-  color: #4ade80;
-  border: 1px dashed rgba(74, 222, 128, 0.3);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-light);
+  border: 1px dashed color-mix(in srgb, var(--accent) 30%, transparent);
   border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
   font-weight: 500;
@@ -288,9 +288,9 @@ html, body {
 }
 
 #new-session-btn:hover {
-  background: rgba(74, 222, 128, 0.2);
-  border-color: rgba(74, 222, 128, 0.5);
-  color: #86efac;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--accent-light);
 }
 
 #session-list {
@@ -1282,6 +1282,127 @@ html, body {
 @keyframes bounce-shadow {
   0%, 100% { transform: scaleX(1.1); opacity: 0.15; }
   45% { transform: scaleX(0.6); opacity: 0.08; }
+}
+
+/* Sweeping — rhythmic side-to-side with arm push */
+#footer-mascot.act-sweep .robot-body {
+  animation: sweep-body 1.2s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+#footer-mascot.act-sweep .robot-arm-l {
+  animation: sweep-arm-l 1.2s ease-in-out infinite;
+  transform-origin: 6.5px 21px;
+}
+#footer-mascot.act-sweep .robot-arm-r {
+  animation: sweep-arm-r 1.2s ease-in-out infinite;
+  transform-origin: 21.5px 21px;
+}
+@keyframes sweep-body {
+  0%, 100% { transform: rotate(2deg) translateY(0); }
+  50% { transform: rotate(-2deg) translateY(-0.5px); }
+}
+@keyframes sweep-arm-l {
+  0%, 100% { transform: rotate(25deg) translateX(1px); }
+  50% { transform: rotate(-10deg) translateX(-1px); }
+}
+@keyframes sweep-arm-r {
+  0%, 100% { transform: rotate(-5deg); }
+  50% { transform: rotate(5deg); }
+}
+
+/* Phone call — arm to head, gentle talking nod */
+#footer-mascot.act-phone .robot-arm-r {
+  transform: rotate(-50deg) translateY(-4px);
+  transform-origin: 21.5px 21px;
+}
+#footer-mascot.act-phone .robot-body {
+  animation: phone-nod 1.8s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+#footer-mascot.act-phone .robot-head {
+  animation: phone-tilt 1.8s ease-in-out infinite;
+  transform-origin: 14px 10px;
+}
+@keyframes phone-nod {
+  0%, 100% { transform: rotate(2deg); }
+  30% { transform: rotate(3deg) translateY(0.5px); }
+  60% { transform: rotate(1deg); }
+}
+@keyframes phone-tilt {
+  0%, 100% { transform: rotate(4deg); }
+  50% { transform: rotate(2deg); }
+}
+
+/* Coding at computer — hunched forward, fast tapping, screen glow */
+#footer-mascot.act-code .robot-body {
+  transform: rotate(4deg);
+  transform-origin: center bottom;
+}
+#footer-mascot.act-code .robot-head {
+  transform: translateY(1px);
+}
+#footer-mascot.act-code .robot-arm-l {
+  animation: code-tap-l 0.3s ease-in-out infinite;
+  transform-origin: 6.5px 21px;
+}
+#footer-mascot.act-code .robot-arm-r {
+  animation: code-tap-r 0.3s ease-in-out infinite;
+  transform-origin: 21.5px 21px;
+}
+#footer-mascot.act-code .robot-chest-glow {
+  animation: code-glow 0.5s ease-in-out infinite;
+}
+#footer-mascot.act-code .robot-eyes {
+  animation: code-focus 4s ease-in-out infinite;
+}
+@keyframes code-tap-l {
+  0%, 100% { transform: rotate(8deg) translateY(0); }
+  50% { transform: rotate(5deg) translateY(-2px); }
+}
+@keyframes code-tap-r {
+  0%, 40% { transform: rotate(-5deg) translateY(0); }
+  70% { transform: rotate(-8deg) translateY(-2px); }
+  100% { transform: rotate(-5deg) translateY(0); }
+}
+@keyframes code-glow {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; fill: var(--accent-light); }
+}
+@keyframes code-focus {
+  0%, 90%, 100% { transform: translateY(0.5px); }
+  50% { transform: translateY(0); }
+}
+
+/* Mopping — steady side-to-side sway with arm extended */
+#footer-mascot.act-mop .robot-body {
+  animation: mop-sway 1.6s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+#footer-mascot.act-mop .robot-arm-l {
+  animation: mop-arm 1.6s ease-in-out infinite;
+  transform-origin: 6.5px 21px;
+}
+#footer-mascot.act-mop .robot-leg-left {
+  animation: mop-leg-l 1.6s ease-in-out infinite;
+}
+#footer-mascot.act-mop .robot-leg-right {
+  animation: mop-leg-r 1.6s ease-in-out infinite;
+}
+@keyframes mop-sway {
+  0%, 100% { transform: rotate(-3deg) translateX(-1px); }
+  50% { transform: rotate(3deg) translateX(1px); }
+}
+@keyframes mop-arm {
+  0%, 100% { transform: rotate(20deg) translateY(-1px); }
+  50% { transform: rotate(10deg) translateY(0); }
+}
+@keyframes mop-leg-l {
+  0%, 100% { transform: translateX(-0.5px); }
+  50% { transform: translateX(0.5px); }
+}
+@keyframes mop-leg-r {
+  0%, 100% { transform: translateX(0.5px); }
+  50% { transform: translateX(-0.5px); }
 }
 
 /* --- Status overrides (applied by JS alongside activity) --- */
@@ -3184,8 +3305,8 @@ html, body {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 9px;
-  color: var(--text-muted);
+  font-size: 10px;
+  color: var(--text-secondary);
   font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
