@@ -533,11 +533,20 @@ async function renderSettingsTab(tab) {
 
         console.log('[notify-test] granted:', granted, '— sending...');
 
-        // Try sending regardless to see if it errors
+        // Minimize window briefly so macOS shows the notification as a banner
+        // (macOS suppresses banners for the frontmost app)
+        try { await invoke('plugin:window|minimize'); } catch {}
+        await new Promise(r => setTimeout(r, 200));
+
         const result = await invoke('plugin:notification|notify', {
           options: { title: 'PaneStreet', body: 'This is a test notification. Looking good!' },
         });
         console.log('[notify-test] notify result:', result);
+
+        // Restore window after a moment so the banner has time to appear
+        await new Promise(r => setTimeout(r, 800));
+        try { await invoke('plugin:window|unminimize'); } catch {}
+        try { await invoke('plugin:window|set_focus'); } catch {}
 
         msgEl.textContent = `Sent (permission: ${permCheck}). Check your notifications.`;
         msgEl.style.color = 'var(--status-idle)';
