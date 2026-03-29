@@ -2432,6 +2432,44 @@ html, body {
   border-radius: 2px;
 }
 
+/* Fake terminal preview */
+.theme-terminal-preview {
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.ttp-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+}
+.ttp-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.ttp-title {
+  flex: 1;
+  text-align: center;
+  font-size: 10px;
+  font-family: var(--font-ui);
+}
+.ttp-body {
+  padding: 8px 12px;
+  min-height: 140px;
+  white-space: pre;
+  overflow: hidden;
+}
+.ttp-body div {
+  line-height: 1.6;
+}
+
 .theme-reset-btn {
   margin-top: 16px;
   padding: 6px 14px;

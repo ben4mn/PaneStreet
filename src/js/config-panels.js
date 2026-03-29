@@ -1220,6 +1220,21 @@ const PRESET_THEMES = {
       brightBlue: '#82aaff', brightMagenta: '#c099ff', brightCyan: '#86e1fc', brightWhite: '#e4f0fb',
     },
   },
+  eg: {
+    name: 'EG',
+    colors: {
+      '--bg-app': '#0e1a2b', '--bg-sidebar': '#0b1524', '--bg-pane': '#091220', '--bg-header': '#0e1a2b',
+      '--bg-footer': '#0e1a2b', '--bg-card': '#162640', '--text-primary': '#d4dce8', '--text-secondary': '#8a9bb5',
+      '--text-bright': '#f0f4f8', '--text-muted': '#5e7491', '--accent': '#fddb32', '--accent-light': '#ffe680',
+    },
+    terminal: {
+      background: '#091220', foreground: '#d4dce8', cursor: '#fddb32',
+      black: '#0e1a2b', red: '#e05252', green: '#5cb85c', yellow: '#fddb32',
+      blue: '#3b82d4', magenta: '#a87fd4', cyan: '#4db8c7', white: '#d4dce8',
+      brightBlack: '#3d5272', brightRed: '#ef6b6b', brightGreen: '#7ed67e', brightYellow: '#ffe680',
+      brightBlue: '#5a9de5', brightMagenta: '#c0a0e8', brightCyan: '#6dcdd9', brightWhite: '#f0f4f8',
+    },
+  },
 };
 
 let saveThemeTimeout = null;
@@ -1295,6 +1310,26 @@ function renderThemeTab(container) {
             <span class="theme-option-name">${p.name}</span>
           </div>`
         ).join('')}
+      </div>
+    </div>
+
+    <div class="theme-terminal-preview" id="theme-preview">
+      <div class="ttp-titlebar" style="background:${theme.colors['--bg-header']}">
+        <span class="ttp-dot" style="background:#ff5f57"></span>
+        <span class="ttp-dot" style="background:#febc2e"></span>
+        <span class="ttp-dot" style="background:#28c840"></span>
+        <span class="ttp-title" style="color:${theme.colors['--text-muted']}">Terminal</span>
+      </div>
+      <div class="ttp-body" style="background:${theme.terminal.background};color:${theme.terminal.foreground}">
+        <div><span style="color:${theme.terminal.green}">~</span> <span style="color:${theme.terminal.blue}">main</span> <span style="color:${theme.terminal.yellow}">✦</span> npm run build</div>
+        <div style="color:${theme.terminal.brightBlack}">  vite v5.4.2 building for production...</div>
+        <div style="color:${theme.terminal.brightBlack}">  transforming...</div>
+        <div>  <span style="color:${theme.terminal.cyan}">dist/index.html</span>  <span style="color:${theme.terminal.brightBlack}">0.45 kB │ gzip: 0.30 kB</span></div>
+        <div>  <span style="color:${theme.terminal.cyan}">dist/app.js</span>     <span style="color:${theme.terminal.brightBlack}">142.8 kB │ gzip: 45.2 kB</span></div>
+        <div style="color:${theme.terminal.green}">  ✓ built in 1.82s</div>
+        <div><span style="color:${theme.terminal.red}">error</span><span style="color:${theme.terminal.brightBlack}">:</span> <span style="color:${theme.terminal.white}">Missing export 'render'</span></div>
+        <div><span style="color:${theme.terminal.magenta}">warning</span><span style="color:${theme.terminal.brightBlack}">:</span> <span style="color:${theme.terminal.yellow}">Unused variable 'count'</span></div>
+        <div><span style="color:${theme.terminal.green}">~</span> <span style="color:${theme.terminal.blue}">main</span> <span style="color:${theme.colors['--accent']}">▊</span></div>
       </div>
     </div>
 
@@ -1396,6 +1431,30 @@ function renderThemeTab(container) {
     };
   });
 
+  // Refresh the fake terminal preview with current theme values
+  function refreshPreview() {
+    const t = getCurrentTheme();
+    const p = container.querySelector('#theme-preview');
+    if (!p) return;
+    const tb = p.querySelector('.ttp-titlebar');
+    const bd = p.querySelector('.ttp-body');
+    tb.style.background = t.colors['--bg-header'];
+    tb.querySelector('.ttp-title').style.color = t.colors['--text-muted'];
+    bd.style.background = t.terminal.background;
+    bd.style.color = t.terminal.foreground;
+    // Re-render body content with updated colors
+    bd.innerHTML = `
+      <div><span style="color:${t.terminal.green}">~</span> <span style="color:${t.terminal.blue}">main</span> <span style="color:${t.terminal.yellow}">✦</span> npm run build</div>
+      <div style="color:${t.terminal.brightBlack}">  vite v5.4.2 building for production...</div>
+      <div style="color:${t.terminal.brightBlack}">  transforming...</div>
+      <div>  <span style="color:${t.terminal.cyan}">dist/index.html</span>  <span style="color:${t.terminal.brightBlack}">0.45 kB │ gzip: 0.30 kB</span></div>
+      <div>  <span style="color:${t.terminal.cyan}">dist/app.js</span>     <span style="color:${t.terminal.brightBlack}">142.8 kB │ gzip: 45.2 kB</span></div>
+      <div style="color:${t.terminal.green}">  ✓ built in 1.82s</div>
+      <div><span style="color:${t.terminal.red}">error</span><span style="color:${t.terminal.brightBlack}">:</span> <span style="color:${t.terminal.white}">Missing export 'render'</span></div>
+      <div><span style="color:${t.terminal.magenta}">warning</span><span style="color:${t.terminal.brightBlack}">:</span> <span style="color:${t.terminal.yellow}">Unused variable 'count'</span></div>
+      <div><span style="color:${t.terminal.green}">~</span> <span style="color:${t.terminal.blue}">main</span> <span style="color:${t.colors['--accent']}">▊</span></div>`;
+  }
+
   // CSS variable color pickers (live preview)
   container.querySelectorAll('input[data-prop]').forEach(input => {
     input.addEventListener('input', () => {
@@ -1405,6 +1464,7 @@ function renderThemeTab(container) {
       theme.colors[prop] = input.value;
       theme.name = 'custom';
       saveTheme(theme);
+      refreshPreview();
     });
   });
 
@@ -1417,6 +1477,7 @@ function renderThemeTab(container) {
       theme.name = 'custom';
       saveTheme(theme);
       window.dispatchEvent(new CustomEvent('theme-terminal-changed', { detail: theme.terminal }));
+      refreshPreview();
     });
   });
 
