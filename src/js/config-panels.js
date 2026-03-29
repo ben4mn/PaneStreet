@@ -118,6 +118,7 @@ function captureSettingsSnapshot() {
     notifyExited: localStorage.getItem('ps-notify-exited') ?? 'true',
     notifySound: localStorage.getItem('ps-notify-sound') ?? 'true',
     robotEnabled: localStorage.getItem('ps-robot-enabled') ?? 'true',
+    robotFrequency: localStorage.getItem('ps-robot-frequency') || 'medium',
   };
 }
 
@@ -138,6 +139,7 @@ function checkSettingsDirty() {
     notifyExited: String(container.querySelector('#pref-notify-exited')?.checked ?? true),
     notifySound: String(container.querySelector('#pref-notify-sound')?.checked ?? true),
     robotEnabled: String(container.querySelector('#pref-robot')?.checked ?? true),
+    robotFrequency: container.querySelector('#pref-robot-frequency')?.value || 'medium',
   };
   return JSON.stringify(current) !== JSON.stringify(savedSettingsSnapshot);
 }
@@ -245,6 +247,7 @@ async function renderSettingsTab(tab) {
     const notifyOnClaudeFinished = localStorage.getItem('ps-notify-claude-finished') !== 'false';
     const notifySound = localStorage.getItem('ps-notify-sound') !== 'false';
     const robotEnabled = localStorage.getItem('ps-robot-enabled') !== 'false';
+    const robotFrequency = localStorage.getItem('ps-robot-frequency') || 'medium';
 
     container.innerHTML = `
       <div class="settings-group">
@@ -432,6 +435,18 @@ async function renderSettingsTab(tab) {
               <span class="setting-switch-slider"></span>
             </label>
           </div>
+
+          <div class="setting-row-inline" style="padding-top:8px">
+            <div>
+              <div class="setting-label">Animation frequency</div>
+              <div class="setting-description">How often the mascot moves, animates, and reacts to your terminals</div>
+            </div>
+            <select id="pref-robot-frequency" class="form-input" style="width:auto;min-width:100px">
+              <option value="low" ${robotFrequency === 'low' ? 'selected' : ''}>Low</option>
+              <option value="medium" ${robotFrequency === 'medium' ? 'selected' : ''}>Medium</option>
+              <option value="high" ${robotFrequency === 'high' ? 'selected' : ''}>High</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -497,6 +512,7 @@ async function renderSettingsTab(tab) {
       localStorage.setItem('ps-notify-sound', container.querySelector('#pref-notify-sound').checked);
       const robotChecked = container.querySelector('#pref-robot').checked;
       localStorage.setItem('ps-robot-enabled', robotChecked);
+      localStorage.setItem('ps-robot-frequency', container.querySelector('#pref-robot-frequency').value);
       window.dispatchEvent(new CustomEvent('robot-toggle', { detail: robotChecked }));
       window.dispatchEvent(new CustomEvent('settings-changed', {
         detail: { fontSize: parseInt(rangeEl.value) }

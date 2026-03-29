@@ -2063,11 +2063,45 @@ const SPEECH_WAITING = ['Need input!', 'Your turn!', 'Waiting...'];
 const SPEECH_DONE = ['Done!', 'All set!', 'Finished!'];
 const SPEECH_CLICK = ['Hey!', 'What\'s up?', 'Beep!', 'Need something?', 'Hello!', '*waves*'];
 
+// Contextual quips based on terminal output patterns
+const CONTEXTUAL_QUIPS = [
+  { patterns: [/npm install|npm i |yarn add|pnpm add/i], quips: ['Installing packages...', 'Grabbing dependencies...', 'npm doing its thing...'] },
+  { patterns: [/npm run build|cargo build|vite build|webpack/i], quips: ['Building...', 'Compiling away...', 'Build in progress...'] },
+  { patterns: [/npm test|pytest|cargo test|vitest|jest/i], quips: ['Fingers crossed...', 'Running tests...', 'Testing testing...'] },
+  { patterns: [/git push/i], quips: ['Shipping it!', 'Off it goes!', 'Pushed!'] },
+  { patterns: [/git commit/i], quips: ['Good commit.', 'Saving progress...', 'Committed!'] },
+  { patterns: [/git merge|git rebase/i], quips: ['Merging...', 'Combining branches...'] },
+  { patterns: [/git pull|git fetch/i], quips: ['Pulling latest...', 'Syncing up...'] },
+  { patterns: [/docker compose|docker build/i], quips: ['Containers spinning up...', 'Docker time...'] },
+  { patterns: [/pip install|poetry add/i], quips: ['Python packages...', 'pip doing its thing...'] },
+  { patterns: [/Total cost:|Total tokens:/i], quips: ["I'd have asked Claude too.", 'Claude delivered.', 'Nice work, Claude.', 'That was fast.'] },
+  { patterns: [/error\[|Error:|SyntaxError|TypeError|panic:/i], quips: ['Oof.', "That doesn't look right...", 'Hmm...'] },
+  { patterns: [/✓ built|Successfully compiled|Build succeeded/i], quips: ['Clean build!', 'Ship it!', 'Looking good.'] },
+  { patterns: [/Downloading|downloading/], quips: ['Downloading...', 'Fetching stuff...'] },
+  { patterns: [/deploy|Deploy|DEPLOY/], quips: ['Deploying!', 'Going live...', 'Launch sequence!'] },
+  { patterns: [/lint|eslint|prettier/i], quips: ['Linting...', 'Keeping it clean...'] },
+  { patterns: [/migration|migrate/i], quips: ['Migrating...', 'Schema changes...'] },
+  { patterns: [/claude |Claude /], quips: ['Claude is thinking...', 'Let Claude cook...', 'AI at work...'] },
+];
+
+// Animation frequency settings: [idlePauseMin, idlePauseMax, contextInterval, walkChance]
+const FREQUENCY_SETTINGS = {
+  low:    { idleMin: 60, idleMax: 120, contextInterval: 45000, walkChance: 0.1 },
+  medium: { idleMin: 30, idleMax: 60,  contextInterval: 25000, walkChance: 0.2 },
+  high:   { idleMin: 10, idleMax: 25,  contextInterval: 15000, walkChance: 0.3 },
+};
+
 let robotEl = null;
 let robotTimer = null;
 let robotFacingLeft = false;
 let robotOverride = null; // status override (working/waiting/exited)
 let lastActivityIndex = -1;
+let lastContextQuip = '';
+let contextScanTimer = null;
+
+function getFrequency() {
+  return FREQUENCY_SETTINGS[localStorage.getItem('ps-robot-frequency') || 'medium'];
+}
 
 function robotInit() {
   robotEl = document.getElementById('footer-mascot');
@@ -2147,6 +2181,7 @@ function robotInit() {
   // Just stand still on startup — the idle hover animation handles the rest
   // First real action after a long pause
   robotNext();
+  startContextScanning();
 }
 
 function toggleRobot(enabled) {
@@ -2165,11 +2200,11 @@ function toggleRobot(enabled) {
 
 function robotNext() {
   if (!robotEl || robotOverride) return;
-  // Long idle pause — robot should mostly just stand still (30-90s)
-  const idlePause = (30 + Math.random() * 60) * 1000;
+  const freq = getFrequency();
+  const idlePause = (freq.idleMin + Math.random() * (freq.idleMax - freq.idleMin)) * 1000;
   robotTimer = setTimeout(() => {
     if (!robotEl || robotOverride) return;
-    if (Math.random() < 0.2) {
+    if (Math.random() < freq.walkChance) {
       robotWalk();
     } else {
       robotDoActivity();
@@ -2213,8 +2248,9 @@ function robotWalk() {
       robotEl.classList.add('walk-arrive');
       robotTimer = setTimeout(() => {
         robotEl.classList.remove('walk-arrive');
-        // Long rest after walking
-        robotTimer = setTimeout(() => robotNext(), (30 + Math.random() * 60) * 1000);
+        // Rest after walking (respects frequency)
+        const f = getFrequency();
+        robotTimer = setTimeout(() => robotNext(), (f.idleMin + Math.random() * (f.idleMax - f.idleMin)) * 1000);
       }, 300);
     }, duration * 1000);
   }, 200);
@@ -2257,6 +2293,58 @@ function robotClearActivity() {
     robotEl.classList.remove(act.cls);
   }
   robotEl.style.transition = 'none';
+}
+
+// --- Contextual Terminal Awareness ---
+
+function sampleTerminalContext() {
+  if (!robotEl || robotOverride) return;
+  if (localStorage.getItem('ps-robot-enabled') === 'false') return;
+  if (sessions.length === 0) return;
+
+  // Sample the focused session's output buffer
+  const session = sessions[focusedIndex];
+  if (!session?.terminal?._outputBuffer) return;
+
+  const buffer = session.terminal._outputBuffer;
+  // Only look at the last 300 chars (recent output)
+  const tail = buffer.slice(-300);
+
+  for (const entry of CONTEXTUAL_QUIPS) {
+    for (const pattern of entry.patterns) {
+      if (pattern.test(tail)) {
+        const quip = entry.quips[Math.floor(Math.random() * entry.quips.length)];
+        // Don't repeat the same quip
+        if (quip === lastContextQuip) continue;
+        lastContextQuip = quip;
+        showSpeech(quip, 4000);
+        return;
+      }
+    }
+  }
+
+  // Fallback: check multi-session awareness
+  const workingCount = sessions.filter(s => s.status === 'Working').length;
+  if (workingCount >= 3 && Math.random() < 0.3) {
+    const multi = ['Busy day.', 'All hands on deck.', 'Full steam ahead.', `${workingCount} sessions cooking...`];
+    const q = multi[Math.floor(Math.random() * multi.length)];
+    if (q !== lastContextQuip) { lastContextQuip = q; showSpeech(q, 4000); }
+    return;
+  }
+
+  // Long idle — suggest a break
+  const idleSessions = sessions.filter(s => s.status === 'Idle').length;
+  if (idleSessions === sessions.length && sessions.length > 0 && Math.random() < 0.15) {
+    const idle = ['Coffee break?', 'All quiet.', 'Nice and calm.', 'Taking it easy...'];
+    const q = idle[Math.floor(Math.random() * idle.length)];
+    if (q !== lastContextQuip) { lastContextQuip = q; showSpeech(q, 3500); }
+  }
+}
+
+function startContextScanning() {
+  if (contextScanTimer) clearInterval(contextScanTimer);
+  const freq = getFrequency();
+  contextScanTimer = setInterval(sampleTerminalContext, freq.contextInterval);
 }
 
 function updateMascot(status) {
