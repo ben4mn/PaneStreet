@@ -2630,11 +2630,12 @@ dependencies = [
 
 [[package]]
 name = "pane-street"
-version = "0.3.1"
+version = "0.4.4"
 dependencies = [
  "dirs",
  "git2",
  "keyring",
+ "libc",
  "portable-pty",
  "serde",
  "serde_json",

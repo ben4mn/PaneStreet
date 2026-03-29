@@ -25,6 +25,7 @@ tokio = { version = "1", features = ["full"] }
 dirs = "6"
 git2 = { version = "0.19", features = ["vendored-libgit2"] }
 keyring = { version = "3", features = ["apple-native"] }
+libc = "0.2"
 
 [profile.release]
 strip = true

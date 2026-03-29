@@ -1,6 +1,6 @@
 import { TerminalSession } from './terminal.js';
 import { togglePanel, hidePanel, isAnyPanelActive, setOnHide, loadSavedTheme, setFocusedCwd } from './config-panels.js';
-import { initFileViewer, toggleFileViewer, updateFileViewerCwd, hideFileViewer, isFileViewerVisible } from './file-viewer.js';
+import { initFileViewer, toggleFileViewer, updateFileViewerCwd, hideFileViewer, isFileViewerVisible, refreshDiffStats } from './file-viewer.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -1205,10 +1205,16 @@ function updateFooterVisibility() {
   const robot = document.getElementById('robot-overlay');
   const hasGit = !!document.getElementById('footer-git')?.textContent;
   const hasPills = sessions.some(s => s.minimized);
-  const isEmpty = !hasGit && !hasPills;
+  const isExpanded = footer.classList.contains('expanded');
+  const isEmpty = !hasGit && !hasPills && !isExpanded;
   footer.classList.toggle('empty', isEmpty);
   if (robot) {
-    robot.style.bottom = isEmpty ? '0' : 'var(--footer-height)';
+    if (isExpanded) {
+      const footerEl = document.getElementById('footer');
+      robot.style.bottom = footerEl.getBoundingClientRect().height + 'px';
+    } else {
+      robot.style.bottom = isEmpty ? '0' : 'var(--footer-height)';
+    }
   }
 }
 
@@ -1548,9 +1554,13 @@ async function updateGitInfo() {
 
     el.textContent = text;
     el.dataset.branch = summary.info.branch;
+
+    // Show chevron when git info is available
+    document.getElementById('footer-expand-toggle').style.display = '';
   } catch {
     el.textContent = '';
     el.dataset.branch = '';
+    document.getElementById('footer-expand-toggle').style.display = 'none';
   }
   updateFooterVisibility();
 }
@@ -1568,9 +1578,244 @@ function setupGitInfoClick() {
   });
 }
 
+// --- Footer Expand / Branch Graph ---
+
+let branchGraphCache = null;
+let footerExpandedHeight = null; // user-dragged height, persisted in localStorage
+
+function setupFooterExpand() {
+  document.getElementById('footer-expand-toggle').addEventListener('click', toggleFooterExpand);
+  setupFooterResize();
+
+  // Restore saved height
+  const saved = localStorage.getItem('ps-footer-expanded-height');
+  if (saved) footerExpandedHeight = parseInt(saved, 10);
+}
+
+function setupFooterResize() {
+  const footer = document.getElementById('footer');
+  const handle = document.getElementById('footer-resize-handle');
+  if (!handle) return;
+
+  let startY, startHeight;
+
+  handle.addEventListener('mousedown', (e) => {
+    if (!footer.classList.contains('expanded')) return;
+    e.preventDefault();
+    startY = e.clientY;
+    startHeight = footer.getBoundingClientRect().height;
+    handle.classList.add('active');
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    function onMove(e) {
+      const delta = startY - e.clientY; // dragging up = positive
+      const minH = 60;
+      const maxH = Math.floor(window.innerHeight * 0.6);
+      const newHeight = Math.max(minH, Math.min(maxH, startHeight + delta));
+      footer.style.height = newHeight + 'px';
+      footer.style.minHeight = newHeight + 'px';
+      footerExpandedHeight = newHeight;
+      updateFooterVisibility();
+      fitVisibleTerminals();
+    }
+
+    function onUp() {
+      handle.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (footerExpandedHeight) {
+        localStorage.setItem('ps-footer-expanded-height', String(footerExpandedHeight));
+      }
+      fitVisibleTerminals();
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+async function toggleFooterExpand() {
+  const footer = document.getElementById('footer');
+  const graph = document.getElementById('footer-branch-graph');
+  const isExpanded = footer.classList.contains('expanded');
+
+  if (isExpanded) {
+    footer.classList.remove('expanded');
+    footer.style.height = '';
+    footer.style.minHeight = '';
+    graph.style.display = 'none';
+    graph.innerHTML = '';
+    branchGraphCache = null;
+    updateFooterVisibility();
+    fitVisibleTerminals();
+    return;
+  }
+
+  // Expand and fetch data
+  footer.classList.add('expanded');
+  if (footerExpandedHeight) {
+    footer.style.height = footerExpandedHeight + 'px';
+    footer.style.minHeight = footerExpandedHeight + 'px';
+  }
+  graph.style.display = '';
+  graph.innerHTML = '<span class="branch-graph-loading">Loading...</span>';
+  updateFooterVisibility();
+  fitVisibleTerminals();
+
+  try {
+    const session = sessions[focusedIndex];
+    if (!session?.cwd) return;
+    const data = await invoke('get_branch_graph', { cwd: session.cwd });
+    if (!data) {
+      graph.innerHTML = '<span class="branch-graph-empty">Not a git repository</span>';
+      return;
+    }
+    branchGraphCache = data;
+    renderBranchGraph(data, data.branches.find(b => b.is_current)?.name);
+  } catch {
+    graph.innerHTML = '<span class="branch-graph-empty">Failed to load branch data</span>';
+  }
+}
+
+function renderBranchGraph(data, selectedBranch) {
+  const graph = document.getElementById('footer-branch-graph');
+  graph.innerHTML = '';
+
+  // Left: branch list
+  const branchList = document.createElement('div');
+  branchList.className = 'branch-list';
+
+  for (const branch of data.branches) {
+    const node = document.createElement('div');
+    node.className = 'branch-node' + (branch.name === selectedBranch ? ' current' : '');
+
+    const dot = document.createElement('span');
+    dot.className = 'branch-dot';
+
+    const label = document.createElement('span');
+    label.className = 'branch-label';
+    label.textContent = branch.name;
+
+    const badges = document.createElement('span');
+    badges.className = 'branch-badges';
+    if (branch.ahead > 0) {
+      const ahead = document.createElement('span');
+      ahead.className = 'branch-badge badge-ahead';
+      ahead.textContent = `+${branch.ahead}`;
+      badges.appendChild(ahead);
+    }
+    if (branch.behind > 0) {
+      const behind = document.createElement('span');
+      behind.className = 'branch-badge badge-behind';
+      behind.textContent = `-${branch.behind}`;
+      badges.appendChild(behind);
+    }
+
+    node.appendChild(dot);
+    node.appendChild(label);
+    node.appendChild(badges);
+
+    node.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      // Fetch commits for this branch and re-render
+      if (branchGraphCache) {
+        renderBranchGraph(branchGraphCache, branch.name);
+      }
+    });
+
+    branchList.appendChild(node);
+  }
+
+  // Right: commit timeline for selected branch
+  const timeline = document.createElement('div');
+  timeline.className = 'commit-timeline';
+
+  // Find the selected branch's commits — if it's the current branch, use recent_commits
+  // Otherwise show just the tip commit info
+  const selectedBranchData = data.branches.find(b => b.name === selectedBranch);
+  const isCurrentBranch = selectedBranchData?.is_current;
+
+  const commits = isCurrentBranch
+    ? data.recent_commits
+    : selectedBranchData
+      ? [{
+          sha: selectedBranchData.commit_sha,
+          message: selectedBranchData.commit_message,
+          author: selectedBranchData.commit_author,
+          time: selectedBranchData.commit_time,
+        }]
+      : [];
+
+  // Draw the connecting line
+  const line = document.createElement('div');
+  line.className = 'timeline-line';
+  timeline.appendChild(line);
+
+  const now = Math.floor(Date.now() / 1000);
+
+  for (const commit of commits) {
+    const dot = document.createElement('div');
+    dot.className = 'commit-dot';
+    dot.title = `${commit.sha} — ${commit.message}`;
+
+    const timeLabel = document.createElement('span');
+    timeLabel.className = 'commit-time';
+    timeLabel.textContent = formatRelativeTime(commit.time, now);
+
+    const msgLabel = document.createElement('span');
+    msgLabel.className = 'commit-msg';
+    msgLabel.textContent = commit.message.length > 20 ? commit.message.slice(0, 20) + '...' : commit.message;
+
+    dot.appendChild(timeLabel);
+    dot.appendChild(msgLabel);
+
+    // Click to show tooltip then collapse
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Toggle tooltip
+      const existing = dot.querySelector('.commit-tooltip');
+      if (existing) {
+        existing.remove();
+        return;
+      }
+      // Remove other tooltips
+      graph.querySelectorAll('.commit-tooltip').forEach(t => t.remove());
+
+      const tooltip = document.createElement('div');
+      tooltip.className = 'commit-tooltip';
+      tooltip.innerHTML = `<strong>${commit.sha}</strong><br>${escapeHtml(commit.message)}<br><span class="commit-tooltip-meta">${escapeHtml(commit.author)} · ${formatRelativeTime(commit.time, now)}</span>`;
+      dot.appendChild(tooltip);
+    });
+
+    timeline.appendChild(dot);
+  }
+
+  graph.appendChild(branchList);
+  graph.appendChild(timeline);
+}
+
+function formatRelativeTime(unixSec, nowSec) {
+  const diff = nowSec - unixSec;
+  if (diff < 60) return 'now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
+  return `${Math.floor(diff / 604800)}w`;
+}
+
+function escapeHtml(text) {
+  const el = document.createElement('span');
+  el.textContent = text;
+  return el.innerHTML;
+}
+
 // --- Config Panel Buttons ---
 
 function setupConfigButtons() {
+  document.getElementById('config-scheduled-btn').onclick = () => togglePanel('scheduled');
   document.getElementById('config-plugins-btn').onclick = () => togglePanel('plugins');
   document.getElementById('config-mcps-btn').onclick = () => togglePanel('mcps');
   document.getElementById('config-memory-btn').onclick = () => togglePanel('memory');
@@ -2562,6 +2807,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupResizeHandles();
   setupSidebarToggle();
   setupGitInfoClick();
+  setupFooterExpand();
   setupConfigButtons();
   setupStatusListener();
   initFileViewer();
@@ -2774,7 +3020,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Check for updates on startup (non-blocking, dismissible)
   setTimeout(() => checkForUpdateOnStartup(), 3000);
 
-  setInterval(updateGitInfo, 5000);
+  setInterval(() => {
+    updateGitInfo();
+    if (isFileViewerVisible()) {
+      const session = sessions[focusedIndex];
+      if (session?.cwd) refreshDiffStats(session.cwd);
+    }
+  }, 5000);
 
   // Poll CWD for the focused session
   setInterval(async () => {

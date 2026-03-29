@@ -20,6 +20,7 @@
       <button id="new-session-btn"><span class="btn-icon">+</span><span class="btn-text"> New Terminal</span></button>
       <div id="session-list"></div>
       <div id="sidebar-actions">
+        <button id="config-scheduled-btn" data-icon="&#9201;"><span class="btn-text">Scheduled</span></button>
         <button id="config-plugins-btn" data-icon="&#9881;"><span class="btn-text">Plugins</span></button>
         <button id="config-mcps-btn" data-icon="&#9879;"><span class="btn-text">MCPs</span></button>
         <button id="config-memory-btn" data-icon="&#9733;"><span class="btn-text">Memory</span></button>
@@ -42,6 +43,7 @@
         <div id="plugins-panel" class="config-panel" style="display:none"></div>
         <div id="mcps-panel" class="config-panel" style="display:none"></div>
         <div id="memory-panel" class="config-panel" style="display:none"></div>
+        <div id="scheduled-panel" class="config-panel" style="display:none"></div>
       </div>
       <div id="notification-panel" style="display:none">
         <div class="notif-panel-header">
@@ -69,8 +71,11 @@
         <div class="file-viewer-content" id="fv-content" style="display:none"></div>
       </div>
       <div id="footer">
+        <div class="resize-handle resize-handle-top" id="footer-resize-handle"></div>
+        <button id="footer-expand-toggle" class="footer-chevron" title="Expand git timeline" style="display:none">&#9662;</button>
         <span id="footer-git"></span>
         <span id="footer-pills"></span>
+        <div id="footer-branch-graph" class="footer-branch-graph"></div>
       </div>
     </div>
   </div>

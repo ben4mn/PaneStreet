@@ -51,7 +51,7 @@ function doShowPanel(panelName) {
 
   // Highlight active button
   document.querySelectorAll('#sidebar-actions button').forEach(b => b.classList.remove('panel-active'));
-  const btnMap = { settings: 'settings-btn', plugins: 'config-plugins-btn', mcps: 'config-mcps-btn', memory: 'config-memory-btn' };
+  const btnMap = { settings: 'settings-btn', plugins: 'config-plugins-btn', mcps: 'config-mcps-btn', memory: 'config-memory-btn', scheduled: 'config-scheduled-btn' };
   document.getElementById(btnMap[panelName])?.classList.add('panel-active');
 
   activePanel = panelName;
@@ -61,6 +61,7 @@ function doShowPanel(panelName) {
   else if (panelName === 'plugins') renderPluginsPanel();
   else if (panelName === 'mcps') renderMcpsPanel();
   else if (panelName === 'memory') renderMemoryPanel();
+  else if (panelName === 'scheduled') renderScheduledPanel();
 }
 
 export function hidePanel() {
@@ -1800,4 +1801,162 @@ async function getHomePath() {
     if (path?.homeDir) return (await path.homeDir()).replace(/\/$/, '');
   } catch {}
   return '/Users/' + (navigator.userAgent.includes('Mac') ? require('os')?.userInfo?.()?.username : 'user');
+}
+
+// --- Scheduled Panel ---
+
+let scheduledRefreshTimer = null;
+
+async function renderScheduledPanel() {
+  const panel = document.getElementById('scheduled-panel');
+
+  panel.innerHTML = `
+    <div class="config-panel-header">
+      <h2>Scheduled</h2>
+      <div class="config-panel-actions">
+        <button id="scheduled-refresh" class="config-action-btn" title="Refresh">Refresh</button>
+      </div>
+    </div>
+    <div id="scheduled-content" class="config-panel-body">
+      <div class="fv-loading">Loading...</div>
+    </div>
+  `;
+
+  document.getElementById('scheduled-refresh').addEventListener('click', () => renderScheduledContent());
+
+  await renderScheduledContent();
+
+  // Auto-refresh every 30s while panel is visible
+  if (scheduledRefreshTimer) clearInterval(scheduledRefreshTimer);
+  scheduledRefreshTimer = setInterval(() => {
+    if (activePanel === 'scheduled') renderScheduledContent();
+    else { clearInterval(scheduledRefreshTimer); scheduledRefreshTimer = null; }
+  }, 30000);
+}
+
+async function renderScheduledContent() {
+  const container = document.getElementById('scheduled-content');
+  if (!container) return;
+
+  try {
+    const data = await invoke('read_scheduled_tasks');
+    container.innerHTML = '';
+
+    // Active Sessions section
+    const sessionsSection = document.createElement('div');
+    sessionsSection.className = 'config-section';
+
+    const sessionsHeader = document.createElement('h3');
+    sessionsHeader.className = 'config-section-title';
+    sessionsHeader.textContent = 'Active Claude Sessions';
+    sessionsSection.appendChild(sessionsHeader);
+
+    const aliveSessions = data.sessions.filter(s => s.alive);
+    const deadSessions = data.sessions.filter(s => !s.alive);
+
+    if (aliveSessions.length === 0 && deadSessions.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'scheduled-empty';
+      empty.textContent = 'No Claude sessions found.';
+      sessionsSection.appendChild(empty);
+    } else {
+      for (const session of aliveSessions) {
+        sessionsSection.appendChild(createSessionCard(session));
+      }
+      if (deadSessions.length > 0) {
+        const staleLabel = document.createElement('div');
+        staleLabel.className = 'scheduled-stale-label';
+        staleLabel.textContent = `${deadSessions.length} stale session${deadSessions.length > 1 ? 's' : ''}`;
+        sessionsSection.appendChild(staleLabel);
+      }
+    }
+
+    container.appendChild(sessionsSection);
+
+    // Scheduled Tasks section
+    const tasksSection = document.createElement('div');
+    tasksSection.className = 'config-section';
+
+    const tasksHeader = document.createElement('h3');
+    tasksHeader.className = 'config-section-title';
+    tasksHeader.textContent = 'Scheduled Tasks';
+    tasksSection.appendChild(tasksHeader);
+
+    if (data.scheduled_tasks.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'scheduled-empty';
+      empty.innerHTML = 'No scheduled tasks found.<br><span class="scheduled-hint">Use <code>/schedule</code> in Claude Code to create scheduled tasks.</span>';
+      tasksSection.appendChild(empty);
+    } else {
+      for (const task of data.scheduled_tasks) {
+        tasksSection.appendChild(createTaskCard(task));
+      }
+    }
+
+    container.appendChild(tasksSection);
+  } catch (err) {
+    container.innerHTML = `<div class="fv-error">Failed to load: ${err}</div>`;
+  }
+}
+
+function createSessionCard(session) {
+  const card = document.createElement('div');
+  card.className = 'scheduled-session-card';
+
+  const now = Date.now();
+  const startedMs = session.started_at;
+  const elapsed = now - startedMs;
+  const timeStr = formatElapsed(elapsed);
+
+  const cwdShort = session.cwd.replace(/^\/Users\/[^/]+/, '~');
+  const nameStr = session.name || cwdShort.split('/').pop() || 'Claude';
+
+  card.innerHTML = `
+    <div class="session-card-header">
+      <span class="session-status-dot ${session.alive ? 'alive' : 'dead'}"></span>
+      <span class="session-card-name">${escHtml(nameStr)}</span>
+      <span class="session-card-time">${timeStr}</span>
+    </div>
+    <div class="session-card-cwd">${escHtml(cwdShort)}</div>
+    <div class="session-card-meta">
+      <span class="session-kind-badge">${escHtml(session.kind)}</span>
+      <span class="session-pid">PID ${session.pid}</span>
+    </div>
+  `;
+
+  return card;
+}
+
+function createTaskCard(task) {
+  const card = document.createElement('div');
+  card.className = 'scheduled-task-card';
+
+  const cronStr = task.cron || '—';
+  const promptStr = task.prompt || task.name || 'No prompt';
+  const recurring = task.recurring ? 'Recurring' : 'One-time';
+
+  card.innerHTML = `
+    <div class="task-card-header">
+      <span class="cron-badge">${escHtml(cronStr)}</span>
+      <span class="task-recurring-badge">${recurring}</span>
+    </div>
+    <div class="task-card-prompt">${escHtml(promptStr)}</div>
+  `;
+
+  return card;
+}
+
+function formatElapsed(ms) {
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  return `${days}d ago`;
+}
+
+function escHtml(text) {
+  return (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

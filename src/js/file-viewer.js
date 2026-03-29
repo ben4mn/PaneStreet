@@ -5,6 +5,8 @@ let expandedDirs = new Set();
 let viewerVisible = false;
 let selectedFile = null;
 let rawMode = false;
+let diffStats = new Map(); // abs_path -> {additions, deletions, status}
+let currentDiffHunks = []; // hunks for currently viewed file
 
 // --- Public API ---
 
@@ -49,6 +51,7 @@ export function showFileViewer(cwd) {
 
   // Always render the tree when opening — fetch fresh CWD first if possible
   if (currentPath) {
+    refreshDiffStats(currentPath);
     showTree();
   } else {
     const tree = document.getElementById('fv-tree');
@@ -94,6 +97,24 @@ export function updateFileViewerCwd(cwd) {
 
 export function isFileViewerVisible() {
   return viewerVisible;
+}
+
+export async function refreshDiffStats(cwd) {
+  if (!cwd) return;
+  try {
+    const stats = await invoke('get_git_diff_stats', { cwd });
+    diffStats.clear();
+    for (const stat of stats) {
+      diffStats.set(stat.abs_path, stat);
+    }
+    // Re-render tree if visible and showing tree view
+    if (viewerVisible && document.getElementById('fv-tree').style.display !== 'none') {
+      renderDirectory(currentPath, document.getElementById('fv-tree'), 0);
+    }
+  } catch {
+    // Not a git repo or other error — clear diff stats
+    diffStats.clear();
+  }
 }
 
 // --- Navigation ---
@@ -198,6 +219,27 @@ async function renderDirectory(path, container, depth) {
 
       row.appendChild(icon);
       row.appendChild(name);
+
+      // Add diff indicator for files
+      if (!entry.is_dir && diffStats.has(entry.path)) {
+        const stat = diffStats.get(entry.path);
+        const diffInd = document.createElement('span');
+        diffInd.className = 'fv-diff-indicator';
+        if (stat.additions > 0) {
+          const addSpan = document.createElement('span');
+          addSpan.className = 'fv-diff-add';
+          addSpan.textContent = `+${stat.additions}`;
+          diffInd.appendChild(addSpan);
+        }
+        if (stat.deletions > 0) {
+          const delSpan = document.createElement('span');
+          delSpan.className = 'fv-diff-del';
+          delSpan.textContent = `-${stat.deletions}`;
+          diffInd.appendChild(delSpan);
+        }
+        row.appendChild(diffInd);
+        row.classList.add('fv-changed');
+      }
 
       if (entry.is_dir) {
         const childContainer = document.createElement('div');
@@ -331,7 +373,7 @@ function isMarkdown(ext) {
 
 // --- Renderers ---
 
-function renderCodeContent(text, ext, container) {
+async function renderCodeContent(text, ext, container) {
   const pre = document.createElement('pre');
   pre.className = 'fv-code-view';
 
@@ -339,11 +381,48 @@ function renderCodeContent(text, ext, container) {
   const lines = text.split('\n');
   const gutterWidth = String(lines.length).length;
 
+  // Load diff hunks for this file if it has changes
+  let addedLines = new Set();
+  let deletedInserts = new Map(); // line number -> array of deleted content
+  currentDiffHunks = [];
+
+  if (selectedFile && diffStats.has(selectedFile)) {
+    try {
+      const detail = await invoke('get_file_diff', { cwd: currentPath, filePath: selectedFile });
+      if (detail) {
+        currentDiffHunks = detail.hunks;
+        for (const hunk of detail.hunks) {
+          for (const line of hunk.lines) {
+            if (line.kind === 'add' && line.new_lineno) {
+              addedLines.add(line.new_lineno);
+            }
+            if (line.kind === 'delete' && line.old_lineno) {
+              // Insert deleted lines before the next add or context line
+              const insertAt = hunk.lines.find(l => l.kind !== 'delete' && l.new_lineno)?.new_lineno || hunk.new_start;
+              if (!deletedInserts.has(insertAt)) deletedInserts.set(insertAt, []);
+              deletedInserts.get(insertAt).push(line.content);
+            }
+          }
+        }
+      }
+    } catch { /* not in git or other error */ }
+  }
+
   let html = '';
   for (let i = 0; i < lines.length; i++) {
-    const lineNum = String(i + 1).padStart(gutterWidth, ' ');
+    const lineNo = i + 1;
+
+    // Insert deleted lines before this line
+    if (deletedInserts.has(lineNo)) {
+      for (const delContent of deletedInserts.get(lineNo)) {
+        html += `<span class="fv-line fv-line-deleted"><span class="fv-line-num"> -</span>${highlightLine(escapeHtml(delContent.replace(/\n$/, '')), lang)}\n</span>`;
+      }
+    }
+
+    const lineNum = String(lineNo).padStart(gutterWidth, ' ');
+    const lineClass = addedLines.has(lineNo) ? ' fv-line-added' : '';
     const highlighted = highlightLine(escapeHtml(lines[i]), lang);
-    html += `<span class="fv-line"><span class="fv-line-num">${lineNum}</span>${highlighted}\n</span>`;
+    html += `<span class="fv-line${lineClass}"><span class="fv-line-num">${lineNum}</span>${highlighted}\n</span>`;
   }
 
   pre.innerHTML = html;
@@ -357,10 +436,60 @@ function renderCodeContent(text, ext, container) {
   backBtn.textContent = '\u2190 Back to files';
   backBtn.addEventListener('click', () => {
     selectedFile = null;
+    currentDiffHunks = [];
     showTree();
   });
   container.appendChild(backBtn);
+
+  // Diff navigation bar if there are changes
+  if (currentDiffHunks.length > 0) {
+    const diffNav = document.createElement('div');
+    diffNav.className = 'fv-diff-nav';
+
+    const label = document.createElement('span');
+    label.className = 'fv-diff-nav-label';
+    label.textContent = `${currentDiffHunks.length} change${currentDiffHunks.length > 1 ? 's' : ''}`;
+
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'fv-action-btn';
+    prevBtn.textContent = '\u2191 Prev';
+    prevBtn.addEventListener('click', () => jumpToDiffHunk(pre, -1));
+
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'fv-action-btn';
+    nextBtn.textContent = '\u2193 Next';
+    nextBtn.addEventListener('click', () => jumpToDiffHunk(pre, 1));
+
+    diffNav.appendChild(label);
+    diffNav.appendChild(prevBtn);
+    diffNav.appendChild(nextBtn);
+    container.appendChild(diffNav);
+  }
+
   container.appendChild(pre);
+}
+
+let currentHunkIndex = -1;
+
+function jumpToDiffHunk(pre, direction) {
+  const changedLines = pre.querySelectorAll('.fv-line-added, .fv-line-deleted');
+  if (changedLines.length === 0) return;
+
+  // Find groups of consecutive changed lines (hunks)
+  const hunkStarts = [changedLines[0]];
+  for (let i = 1; i < changedLines.length; i++) {
+    const prev = changedLines[i - 1];
+    const curr = changedLines[i];
+    if (prev.nextElementSibling !== curr) {
+      hunkStarts.push(curr);
+    }
+  }
+
+  currentHunkIndex += direction;
+  if (currentHunkIndex < 0) currentHunkIndex = hunkStarts.length - 1;
+  if (currentHunkIndex >= hunkStarts.length) currentHunkIndex = 0;
+
+  hunkStarts[currentHunkIndex].scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
 // --- Syntax Highlighting ---
@@ -502,6 +631,17 @@ function parseMarkdown(text) {
 }
 
 function handleFileViewerKeydown(e) {
+  // Diff hunk navigation when viewing file content
+  const content = document.getElementById('fv-content');
+  if (content.style.display !== 'none') {
+    if (e.key === '[' || e.key === ']') {
+      e.preventDefault();
+      const pre = content.querySelector('.fv-code-view');
+      if (pre) jumpToDiffHunk(pre, e.key === ']' ? 1 : -1);
+      return;
+    }
+  }
+
   const tree = document.getElementById('fv-tree');
   if (tree.style.display === 'none') return;
 

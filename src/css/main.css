@@ -108,6 +108,22 @@ html, body {
 
 .resize-handle-right { right: -2px; }
 .resize-handle-left { left: -2px; }
+.resize-handle-top {
+  position: absolute;
+  top: -2px;
+  left: 0;
+  right: 0;
+  height: 5px;
+  width: auto;
+  cursor: row-resize;
+  z-index: 20;
+  transition: background 0.15s;
+}
+.resize-handle-top:hover,
+.resize-handle-top.active {
+  background: var(--accent);
+  opacity: 0.4;
+}
 
 #sidebar-header {
   display: flex;
@@ -851,6 +867,7 @@ html, body {
 
 /* Footer */
 #footer {
+  position: relative;
   height: var(--footer-height);
   min-height: var(--footer-height);
   background: var(--bg-footer);
@@ -895,6 +912,196 @@ html, body {
   flex-wrap: wrap;
 }
 
+/* Footer expand toggle */
+.footer-chevron {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 4px;
+  line-height: 1;
+  transition: transform 0.2s ease, color 0.15s;
+  flex-shrink: 0;
+}
+.footer-chevron:hover { color: var(--text-primary); }
+#footer.expanded .footer-chevron { transform: rotate(180deg); }
+
+/* Hide resize handle when footer is collapsed */
+#footer:not(.expanded) .resize-handle-top { display: none; }
+
+/* Expanded footer */
+#footer.expanded {
+  height: calc(var(--footer-height) * 2.5);
+  min-height: 60px;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  padding-bottom: 4px;
+  transition: none; /* disable transition during drag */
+}
+
+/* Branch graph container */
+.footer-branch-graph {
+  display: none;
+  gap: 12px;
+  padding: 4px 0 0;
+  overflow: hidden;
+  flex-basis: 100%;
+  min-height: 0;
+  flex-grow: 1;
+}
+#footer.expanded .footer-branch-graph { display: flex; }
+
+.branch-graph-loading,
+.branch-graph-empty {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+}
+
+/* Branch list (left side) */
+.branch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+  max-width: 180px;
+  overflow-y: auto;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+}
+
+.branch-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  transition: background 0.15s;
+}
+.branch-node:hover { background: var(--bg-pane); }
+.branch-node.current { color: var(--accent-light); }
+
+.branch-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.branch-node.current .branch-dot { background: var(--accent); }
+
+.branch-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.branch-badges {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.branch-badge {
+  font-size: 9px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+}
+.badge-ahead { color: #4ade80; background: rgba(74, 222, 128, 0.1); }
+.badge-behind { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+
+/* Commit timeline (right side) */
+.commit-timeline {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  flex: 1;
+  position: relative;
+  padding-top: 6px;
+  overflow-x: auto;
+  overflow-y: auto;
+  flex-wrap: wrap;
+  scrollbar-width: thin;
+}
+
+.timeline-line {
+  position: absolute;
+  top: 9px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--border);
+  z-index: 0;
+}
+
+.commit-dot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  min-width: 50px;
+  padding: 0 4px;
+}
+
+.commit-dot::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  border: 2px solid var(--bg-footer);
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.commit-dot:hover::before { background: var(--accent); }
+
+.commit-time {
+  font-size: 8px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.commit-msg {
+  font-size: 8px;
+  color: var(--text-secondary);
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.commit-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+  white-space: nowrap;
+  z-index: 200;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  pointer-events: auto;
+}
+.commit-tooltip-meta {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
 /* Robot overlay — walks over all content */
 #robot-overlay {
   position: fixed;
@@ -905,7 +1112,7 @@ html, body {
   pointer-events: none;
   z-index: 100;
   overflow: visible;
-  transition: left 0.25s ease;
+  transition: left 0.25s ease, bottom 0.2s ease;
 }
 
 /* When sidebar is collapsed — toggled via JS */
@@ -2240,6 +2447,141 @@ html, body {
   margin-bottom: 6px;
 }
 
+/* Scheduled panel */
+.config-section { margin-bottom: 20px; }
+.config-section-title {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.scheduled-session-card,
+.scheduled-task-card {
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  margin-bottom: 6px;
+}
+
+.session-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.session-status-dot.alive { background: var(--status-idle, #4ade80); }
+.session-status-dot.dead { background: var(--text-muted); }
+
+.session-card-name {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-card-time {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.session-card-cwd {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.session-kind-badge {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.session-pid {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.task-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.cron-badge {
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06);
+  color: var(--accent-light);
+}
+
+.task-recurring-badge {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.task-card-prompt {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.scheduled-empty {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  padding: 12px;
+  text-align: center;
+}
+.scheduled-hint {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.scheduled-hint code {
+  background: rgba(255,255,255,0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.scheduled-stale-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  padding: 6px 12px;
+  text-align: center;
+  font-style: italic;
+}
+
 /* Memory editor */
 /* Project header */
 .memory-project-header {
@@ -2817,6 +3159,55 @@ html, body {
   text-align: right;
   color: var(--text-muted);
   user-select: none;
+}
+
+/* Diff indicators in file tree */
+.fv-diff-indicator {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  font-size: 9px;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  padding-right: 4px;
+}
+.fv-diff-add { color: #4ade80; }
+.fv-diff-del { color: #ef4444; }
+.fv-entry.fv-changed {
+  border-left: 2px solid var(--accent);
+}
+
+/* Inline diff highlighting */
+.fv-line.fv-line-added {
+  background: rgba(74, 222, 128, 0.08);
+}
+.fv-line.fv-line-added .fv-line-num {
+  color: #4ade80;
+}
+.fv-line.fv-line-deleted {
+  background: rgba(239, 68, 68, 0.08);
+  opacity: 0.7;
+}
+.fv-line.fv-line-deleted .fv-line-num {
+  color: #ef4444;
+}
+
+/* Diff navigation */
+.fv-diff-nav {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--bg-footer);
+  border-bottom: 1px solid var(--border);
+  z-index: 5;
+  font-size: var(--font-size-xs);
+}
+.fv-diff-nav-label {
+  color: var(--text-muted);
+  flex: 1;
 }
 
 /* Markdown view */

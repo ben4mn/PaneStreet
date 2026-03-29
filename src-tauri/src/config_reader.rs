@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -295,6 +295,130 @@ pub fn read_project_memories(project_path: String) -> Result<ProjectMemories, St
         memory_index,
         memory_files,
         global_claude_md,
+    })
+}
+
+// --- Claude Scheduled Tasks & Sessions ---
+
+#[derive(Clone, Serialize)]
+pub struct ClaudeSession {
+    pub pid: u64,
+    pub session_id: String,
+    pub cwd: String,
+    pub started_at: i64,
+    pub kind: String,
+    pub entrypoint: String,
+    pub name: Option<String>,
+    pub alive: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ScheduledTask {
+    pub id: Option<String>,
+    pub cron: Option<String>,
+    pub prompt: Option<String>,
+    pub recurring: Option<bool>,
+    pub created_at: Option<i64>,
+    pub last_run: Option<i64>,
+    pub name: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct ScheduledOverview {
+    pub sessions: Vec<ClaudeSession>,
+    pub scheduled_tasks: Vec<ScheduledTask>,
+}
+
+fn is_pid_alive(pid: u64) -> bool {
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+#[tauri::command]
+pub fn read_scheduled_tasks() -> Result<ScheduledOverview, String> {
+    let claude = claude_dir().ok_or("Could not find home directory")?;
+
+    // Read active sessions from ~/.claude/sessions/*.json
+    let mut sessions = Vec::new();
+    let sessions_dir = claude.join("sessions");
+    if sessions_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&sessions_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map(|e| e == "json").unwrap_or(false) {
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        if let Ok(val) = serde_json::from_str::<Value>(&content) {
+                            let pid = val.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let alive = if pid > 0 { is_pid_alive(pid) } else { false };
+
+                            sessions.push(ClaudeSession {
+                                pid,
+                                session_id: val
+                                    .get("sessionId")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                cwd: val
+                                    .get("cwd")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                started_at: val
+                                    .get("startedAt")
+                                    .and_then(|v| v.as_i64())
+                                    .unwrap_or(0),
+                                kind: val
+                                    .get("kind")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                entrypoint: val
+                                    .get("entrypoint")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                name: val
+                                    .get("name")
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from),
+                                alive,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort: alive first, then by started_at descending
+    sessions.sort_by(|a, b| {
+        b.alive
+            .cmp(&a.alive)
+            .then(b.started_at.cmp(&a.started_at))
+    });
+
+    // Read scheduled tasks from ~/.claude/scheduled_tasks.json if it exists
+    let mut scheduled_tasks = Vec::new();
+    let tasks_path = claude.join("scheduled_tasks.json");
+    if tasks_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&tasks_path) {
+            // Try parsing as array first, then as object with a tasks field
+            if let Ok(tasks) = serde_json::from_str::<Vec<ScheduledTask>>(&content) {
+                scheduled_tasks = tasks;
+            } else if let Ok(val) = serde_json::from_str::<Value>(&content) {
+                if let Some(arr) = val.get("tasks").and_then(|v| v.as_array()) {
+                    for item in arr {
+                        if let Ok(task) = serde_json::from_value::<ScheduledTask>(item.clone()) {
+                            scheduled_tasks.push(task);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(ScheduledOverview {
+        sessions,
+        scheduled_tasks,
     })
 }
 
