@@ -1,0 +1,22 @@
+{
+  "name": "video",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@remotion/cli": "4.0.441",
+    "@remotion/transitions": "4.0.441",
+    "@types/react": "19.2.14",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.441",
+    "typescript": "6.0.2"
+  }
+}

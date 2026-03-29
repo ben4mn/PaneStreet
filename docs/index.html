@@ -107,6 +107,11 @@
       border-radius: 12px; border: 1px solid var(--border);
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     }
+    .hero-video {
+      margin-top: 4rem; max-width: 960px; width: 100%;
+      border-radius: 12px; border: 1px solid var(--border);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
 
     /* Sections */
     section { padding: 6rem 2rem; max-width: 1100px; margin: 0 auto; }
@@ -249,7 +254,10 @@
       View on GitHub
     </a>
   </div>
-  <img src="screenshots/hero.png" alt="PaneStreet app showing multiple terminal panes with syntax highlighting" class="hero-screenshot">
+  <video class="hero-video" autoplay loop muted playsinline poster="screenshots/hero.png">
+    <source src="panestreet-demo.mp4" type="video/mp4">
+    <img src="screenshots/hero.png" alt="PaneStreet demo" class="hero-screenshot">
+  </video>
 </div>
 
 <!-- Features -->
