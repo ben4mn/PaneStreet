@@ -2086,9 +2086,9 @@ const CONTEXTUAL_QUIPS = [
 
 // Animation frequency settings: [idlePauseMin, idlePauseMax, contextInterval, walkChance]
 const FREQUENCY_SETTINGS = {
-  low:    { idleMin: 60, idleMax: 120, contextInterval: 45000, walkChance: 0.1 },
-  medium: { idleMin: 30, idleMax: 60,  contextInterval: 25000, walkChance: 0.2 },
-  high:   { idleMin: 10, idleMax: 25,  contextInterval: 15000, walkChance: 0.3 },
+  low:    { idleMin: 200, idleMax: 300, contextInterval: 60000, walkChance: 0.1 },
+  medium: { idleMin: 60,  idleMax: 100, contextInterval: 35000, walkChance: 0.2 },
+  high:   { idleMin: 30,  idleMax: 60,  contextInterval: 20000, walkChance: 0.3 },
 };
 
 let robotEl = null;
