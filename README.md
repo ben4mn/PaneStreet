@@ -31,6 +31,12 @@
   <img src="docs/screenshots/hero.png" alt="PaneStreet — terminal multiplexer with multiple panes" width="800">
 </p>
 
+<p align="center">
+  <a href="https://ben4mn.github.io/PaneStreet/">
+    <img src="https://img.shields.io/badge/Watch%20Demo%20Video-▶-2a6df0?style=for-the-badge" alt="Watch Demo">
+  </a>
+</p>
+
 ## Why PaneStreet?
 
 Terminal multiplexers like tmux are powerful but stuck in the 80s. PaneStreet brings multi-pane terminal management into a native desktop app with GPU-accelerated rendering, drag-and-drop window management, 16 built-in themes, and deep integration with Claude AI tools.
@@ -73,7 +79,14 @@ No config files. No arcane keybindings to memorize. Just open it and start worki
 - **Plugin viewer** — See installed Claude plugins with version and scope info
 - **MCP browser** — View configured Model Context Protocol servers
 - **Memory inspector** — Browse project-specific and global Claude memory
+- **Scheduled tasks** — Monitor active Claude Code sessions and scheduled tasks
 - **Config reader** — Reads your Claude configuration automatically
+
+### Git Integration
+- **Branch display** — Current branch shown in the footer with dirty indicator
+- **Expandable branch timeline** — Drag-resizable footer showing all branches with ahead/behind counts and commit history
+- **File diff indicators** — Green/red +N/-N counts per file in the file browser
+- **Inline diff highlighting** — Added/deleted lines highlighted when viewing changed files
 
 ### Customization
 - **16 built-in themes** — Dark, Midnight Blue, Dracula, Nord, Solarized Dark, Gruvbox Dark, Tokyo Night, One Dark, Catppuccin Mocha, Rose Pine, Kanagawa, Everforest, Synthwave 84, Ayu Dark, Horizon, Moonlight
@@ -176,18 +189,33 @@ PaneStreet/
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/file-browser.png" alt="PaneStreet file browser panel" width="700">
-  <br><em>Built-in file browser with CWD tracking</em>
+  <img src="docs/screenshots/themes.png" alt="PaneStreet freeform layout with mascot" width="700">
+  <br><em>Freeform window management with interactive robot companion</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/settings.png" alt="PaneStreet keyboard shortcuts editor" width="700">
+  <img src="docs/screenshots/file-browser.png" alt="PaneStreet file viewer with markdown rendering" width="700">
+  <br><em>Built-in file viewer with syntax highlighting and markdown rendering</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/scheduled.png" alt="PaneStreet scheduled tasks panel" width="700">
+  <br><em>Claude session monitor and scheduled tasks</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/plugins.png" alt="PaneStreet plugins panel" width="700">
+  <br><em>Claude plugin management</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/memory.png" alt="PaneStreet memory panel with CLAUDE.md" width="700">
+  <br><em>Project memory and CLAUDE.md viewer</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" alt="PaneStreet keyboard shortcuts" width="700">
   <br><em>Fully rebindable keyboard shortcuts with conflict detection</em>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/robot.png" alt="PaneStreet robot mascot" width="700">
-  <br><em>Meet the PaneStreet robot</em>
 </p>
 
 ## Contributing
