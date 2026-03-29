@@ -493,7 +493,7 @@ function createLayoutToggle() {
 function setupFreeformDrag() {
   let dragging = null;
   let snapPreview = null;
-  const SNAP_EDGE = 30; // px from edge to trigger snap zone
+  const SNAP_EDGE = 8; // px from edge to trigger snap zone
 
   function getSnapZone(x, y, gridRect, r) {
     // Returns a snap zone descriptor or null
@@ -788,7 +788,7 @@ function setFocus(index) {
 
   sessions[index].terminal.focus();
   updateGitInfo();
-  updateMascot(sessions[index].status || 'Idle');
+  updateMascot(sessions[index].status || 'Idle', Math.random() > 0.2);
   updateFileViewerCwd(sessions[index].cwd);
   setFocusedCwd(sessions[index].cwd);
 }
@@ -2008,12 +2008,12 @@ function renderNotificationPanel() {
     const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const statusClass = n.status.startsWith('OSC:') ? 'WaitingForInput' : n.status;
     const statusLabel = n.status.startsWith('OSC:') ? n.status : {
-      WaitingForInput: 'Waiting for input',
-      NeedsPermission: 'Needs permission',
-      Exited: 'Exited',
-      CommandCompleted: 'Command completed',
-      Error: 'Error detected',
-      ClaudeFinished: 'Claude finished',
+      WaitingForInput: 'Needs attention',
+      NeedsPermission: 'Needs approval',
+      Exited: 'Finished',
+      CommandCompleted: 'Command done',
+      Error: 'Something went wrong',
+      ClaudeFinished: 'Claude is done',
     }[n.status] || n.status;
     const dotColorMap = { WaitingForInput: 'waiting', NeedsPermission: 'waiting', Exited: 'exited', Error: 'exited', ClaudeFinished: 'idle', CommandCompleted: 'idle' };
     const dotColor = dotColorMap[statusClass] || 'working';
@@ -2086,7 +2086,20 @@ const STATUS_COLORS = {
 
 async function maybeNotify(session, status) {
   console.log('[notify]', status, 'windowFocused:', windowFocused);
-  if (windowFocused) return;
+  if (windowFocused) {
+    // If in-app but on a different terminal, have the mascot relay the notification
+    const idx = sessions.indexOf(session);
+    if (idx >= 0 && idx !== focusedIndex && localStorage.getItem('ps-robot-enabled') !== 'false') {
+      const friendlyStatus = {
+        WaitingForInput: 'needs attention',
+        NeedsPermission: 'needs approval',
+        Error: 'has a problem',
+        ClaudeFinished: 'Claude is done',
+      }[status];
+      if (friendlyStatus) showSpeech(`${session.name} ${friendlyStatus}`, 4000);
+    }
+    return;
+  }
   if (localStorage.getItem('ps-notifications') === 'false') return;
 
   // Check per-status toggles
@@ -2108,12 +2121,12 @@ async function maybeNotify(session, status) {
   }
 
   const messages = {
-    WaitingForInput: 'is waiting for your input',
-    NeedsPermission: 'needs permission to continue',
+    WaitingForInput: 'needs your attention',
+    NeedsPermission: 'is asking for your approval',
     Exited: 'has finished',
-    CommandCompleted: 'command completed',
-    Error: 'encountered an error',
-    ClaudeFinished: 'Claude task completed',
+    CommandCompleted: 'finished running a command',
+    Error: 'ran into a problem',
+    ClaudeFinished: 'Claude finished working',
   };
   const msg = messages[status];
   if (!msg) return;
@@ -2306,7 +2319,7 @@ const APP_TIPS = [
 const SPEECH_WORKING = ['On it!', 'Working...', 'Processing...'];
 const SPEECH_WAITING = ['Need input!', 'Your turn!', 'Waiting...'];
 const SPEECH_DONE = ['Done!', 'All set!', 'Finished!'];
-const SPEECH_CLICK = ['Hey!', 'What\'s up?', 'Beep!', 'Need something?', 'Hello!', '*waves*'];
+const SPEECH_CLICK = ['Hey there.', 'What\'s up?', 'Need something?', 'Sup.', 'You rang?', 'At your service.', 'Hmm?', '*waves*', 'Present.', 'Yo.'];
 
 // Contextual quips based on terminal output patterns
 const CONTEXTUAL_QUIPS = [
@@ -2381,17 +2394,40 @@ function robotInit() {
     clearTimeout(clickResetTimer);
     clickResetTimer = setTimeout(() => { clickCount = 0; }, 1500);
 
-    if (clickCount >= 3) {
+    if (clickCount >= 8) {
       clickCount = 0;
       clearTimeout(robotTimer);
       robotClearActivity();
-      // Easter egg: random reaction
+      // Exasperated tier
       const reactions = [
-        () => { showSpeech('Whoa whoa whoa!', 3000); robotDoActivity(); },
-        () => { showSpeech('OK OK, I\'m going!', 3000); robotWalk(); },
-        () => { showSpeech('You found a secret!', 4000); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 6000); },
-        () => { showSpeech('Stop poking me!', 3000); robotEl.classList.add('act-bounce'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
-        () => { showSpeech('Alright, dance break!', 4000); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotWalk(); }, 5000); },
+        () => { showSpeech('I\'m filing a complaint.', 4000); robotWalk(); },
+        () => { showSpeech('Fine. You win.', 3000); robotWalk(); },
+        () => { showSpeech('I need a vacation.', 4000); robotEl.classList.add('act-sleep'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 8000); },
+        () => { showSpeech('That\'s it, I\'m unionizing.', 4000); robotWalk(); },
+      ];
+      reactions[Math.floor(Math.random() * reactions.length)]();
+    } else if (clickCount >= 5) {
+      clearTimeout(robotTimer);
+      robotClearActivity();
+      // Animated tier
+      const reactions = [
+        () => { showSpeech('Seriously?!', 3000); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+        () => { showSpeech('I\'m not a button, you know.', 4000); robotEl.classList.add('act-bounce'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('Careful, I bite.', 3000); robotEl.classList.add('act-look'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('Do you mind??', 3000); robotDoActivity(); },
+      ];
+      reactions[Math.floor(Math.random() * reactions.length)]();
+    } else if (clickCount >= 3) {
+      clearTimeout(robotTimer);
+      robotClearActivity();
+      // Mild annoyance tier
+      const reactions = [
+        () => { showSpeech('Ok ok, stop poking me!', 3000); robotEl.classList.add('act-bounce'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('That tickles!', 3000); robotDoActivity(); },
+        () => { showSpeech('I\'m working here!', 3000); robotEl.classList.add('act-type'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('Personal space, please!', 3000); robotWalk(); },
+        () => { showSpeech('Alright alright, dance break!', 4000); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+        () => { showSpeech('You\'re persistent, I\'ll give you that.', 4000); robotDoActivity(); },
       ];
       reactions[Math.floor(Math.random() * reactions.length)]();
     } else {
@@ -2592,7 +2628,7 @@ function startContextScanning() {
   contextScanTimer = setInterval(sampleTerminalContext, freq.contextInterval);
 }
 
-function updateMascot(status) {
+function updateMascot(status, silent = false) {
   if (!robotEl) return;
 
   // Clear previous override
@@ -2603,19 +2639,20 @@ function updateMascot(status) {
     clearTimeout(robotTimer);
     robotClearActivity();
     robotEl.classList.add('working');
-    showSpeech(SPEECH_WORKING[Math.floor(Math.random() * SPEECH_WORKING.length)]);
+    if (!silent) showSpeech(SPEECH_WORKING[Math.floor(Math.random() * SPEECH_WORKING.length)]);
   } else if (status === 'WaitingForInput' || status === 'NeedsPermission') {
     robotOverride = 'waiting';
     clearTimeout(robotTimer);
     robotClearActivity();
     robotEl.classList.add('waiting', 'act-look');
+    // Always speak for attention-needed statuses, even on tab switch
     showSpeech(SPEECH_WAITING[Math.floor(Math.random() * SPEECH_WAITING.length)]);
   } else if (status === 'Exited') {
     robotOverride = 'exited';
     clearTimeout(robotTimer);
     robotClearActivity();
     robotEl.classList.add('exited');
-    showSpeech(SPEECH_DONE[Math.floor(Math.random() * SPEECH_DONE.length)]);
+    if (!silent) showSpeech(SPEECH_DONE[Math.floor(Math.random() * SPEECH_DONE.length)]);
   } else {
     // Back to idle — resume autonomous behavior
     if (robotOverride) {

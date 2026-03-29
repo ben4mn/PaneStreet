@@ -51,6 +51,7 @@ No config files. No arcane keybindings to memorize. Just open it and start worki
 - **Session persistence** — Layout and scrollback history survive restarts
 - **Process status detection** — Know what's running in each pane at a glance
 - **Directional navigation** — Move between panes with `⌘ ⌥ Arrow` keys
+- **Shift+Enter support** — Native CSI u keyboard protocol for Claude Code and other modern CLI tools
 
 ### Window Management
 - **Three layout modes** — Auto-grid for quick setups, freeform for full control, snap-to-edge for tiling
@@ -58,8 +59,9 @@ No config files. No arcane keybindings to memorize. Just open it and start worki
 - **Minimized pane pills** — Quick access to backgrounded terminals in the footer
 
 ### Notifications & Monitoring
-- **Notification sidebar** — Slide-in panel showing terminal alerts (waiting for input, needs permission, exited)
+- **Notification sidebar** — Slide-in panel showing terminal alerts in plain language
 - **Notification rings** — Pulsing glow on unfocused panes that need attention
+- **Mascot notification relay** — When you're in the app, the mascot announces alerts from other terminals
 - **Sidebar metadata** — CWD, listening ports, and PR status shown per session
 - **OSC notification support** — Handles OSC 9, 99, and 777 terminal notifications
 - **Native desktop notifications** — Per-status toggle with sound control
@@ -87,6 +89,12 @@ No config files. No arcane keybindings to memorize. Just open it and start worki
 - **Expandable branch timeline** — Drag-resizable footer showing all branches with ahead/behind counts and commit history
 - **File diff indicators** — Green/red +N/-N counts per file in the file browser
 - **Inline diff highlighting** — Added/deleted lines highlighted when viewing changed files
+
+### Robot Mascot
+- **Interactive companion** — An animated robot that lives in the footer, walks around, and reacts to your work
+- **Contextual awareness** — Detects terminal activity (builds, tests, deploys, errors) and comments on what it sees
+- **Personality-driven easter eggs** — Click the mascot for escalating reactions with attitude
+- **Configurable frequency** — Low, medium, or high activity levels, or disable entirely
 
 ### Customization
 - **16 built-in themes** — Dark, Midnight Blue, Dracula, Nord, Solarized Dark, Gruvbox Dark, Tokyo Night, One Dark, Catppuccin Mocha, Rose Pine, Kanagawa, Everforest, Synthwave 84, Ayu Dark, Horizon, Moonlight

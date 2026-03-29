@@ -57,6 +57,21 @@ export class TerminalSession {
     this.term.loadAddon(this.fitAddon);
     this.term.loadAddon(new WebLinksAddon());
 
+    // Send CSI u escape sequence for Shift+Enter so Claude Code recognizes it as newline
+    this.term.attachCustomKeyEventHandler((e) => {
+      if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey) {
+        if (this.sessionId) {
+          const encoder = new TextEncoder();
+          invoke('write_to_pty', {
+            sessionId: this.sessionId,
+            data: Array.from(encoder.encode('\x1b[13;2u')),
+          });
+        }
+        return false;
+      }
+      return true;
+    });
+
     // Register OSC handlers for terminal notifications (OSC 9, 99, 777)
     // OSC 9: iTerm2-style growl notification
     this.term.parser.registerOscHandler(9, (data) => {
