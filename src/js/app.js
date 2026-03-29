@@ -1822,8 +1822,9 @@ function hideNotificationPanel() {
 }
 
 function toggleNotificationPanel() {
-  if (notifPanelVisible) hideNotificationPanel();
-  else showNotificationPanel();
+  if (notifPanelVisible) { hideNotificationPanel(); return; }
+  if (isFileViewerVisible()) hideFileViewer();
+  showNotificationPanel();
 }
 
 // --- Status Detection ---
@@ -2578,6 +2579,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select') || e.target.closest('a')) return;
     e.preventDefault();
     invoke('plugin:window|start_dragging');
+  });
+
+  // Close notification panel when file viewer opens
+  window.addEventListener('panel-opening', (e) => {
+    if (e.detail === 'file-viewer' && notifPanelVisible) hideNotificationPanel();
   });
 
   // Notification panel toggle

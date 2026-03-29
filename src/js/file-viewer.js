@@ -26,8 +26,9 @@ export function initFileViewer() {
 }
 
 export function toggleFileViewer(latestCwd) {
-  if (viewerVisible) hideFileViewer();
-  else showFileViewer(latestCwd || currentPath);
+  if (viewerVisible) { hideFileViewer(); return; }
+  window.dispatchEvent(new CustomEvent('panel-opening', { detail: 'file-viewer' }));
+  showFileViewer(latestCwd || currentPath);
 }
 
 export function showFileViewer(cwd) {
