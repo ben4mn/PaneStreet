@@ -2,27 +2,27 @@ import { AbsoluteFill, useCurrentFrame, interpolate, Img, staticFile } from "rem
 import { COLORS, fullScreen, featureLabel } from "../styles";
 
 const THEMES = [
-  { file: "hero.png", name: "Dark (Default)", accent: "#2a6df0" },
-  { file: "freeform.png", name: "Midnight Blue", accent: "#4a9eff" },
-  { file: "hero.png", name: "Dracula", accent: "#bd93f9" },
-  { file: "freeform.png", name: "Nord", accent: "#88c0d0" },
-  { file: "hero.png", name: "Solarized Dark", accent: "#268bd2" },
-  { file: "freeform.png", name: "Gruvbox Dark", accent: "#fabd2f" },
-  { file: "hero.png", name: "Tokyo Night", accent: "#7aa2f7" },
-  { file: "freeform.png", name: "One Dark", accent: "#61afef" },
-  { file: "hero.png", name: "Catppuccin Mocha", accent: "#cba6f7" },
-  { file: "freeform.png", name: "Rose Pine", accent: "#c4a7e7" },
-  { file: "hero.png", name: "Kanagawa", accent: "#7e9cd8" },
-  { file: "freeform.png", name: "Synthwave 84", accent: "#f97e72" },
-  { file: "hero.png", name: "Everforest", accent: "#a7c080" },
-  { file: "freeform.png", name: "Ayu Dark", accent: "#ffb454" },
-  { file: "hero.png", name: "Horizon", accent: "#e95678" },
-  { file: "freeform.png", name: "Moonlight", accent: "#82aaff" },
+  { file: "theme-dark.png", name: "Dark", accent: "#2a6df0" },
+  { file: "theme-midnight-blue.png", name: "Midnight Blue", accent: "#4a9eff" },
+  { file: "theme-dracula.png", name: "Dracula", accent: "#bd93f9" },
+  { file: "theme-nord.png", name: "Nord", accent: "#88c0d0" },
+  { file: "theme-solarized.png", name: "Solarized Dark", accent: "#268bd2" },
+  { file: "theme-gruvbox.png", name: "Gruvbox Dark", accent: "#fabd2f" },
+  { file: "theme-tokyo-night.png", name: "Tokyo Night", accent: "#7aa2f7" },
+  { file: "theme-one-dark.png", name: "One Dark", accent: "#61afef" },
+  { file: "theme-catppuccin.png", name: "Catppuccin Mocha", accent: "#cba6f7" },
+  { file: "theme-rose-pine.png", name: "Rose Pine", accent: "#c4a7e7" },
+  { file: "theme-kanagawa.png", name: "Kanagawa", accent: "#7e9cd8" },
+  { file: "theme-everforest.png", name: "Everforest", accent: "#a7c080" },
+  { file: "theme-synthwave.png", name: "Synthwave 84", accent: "#f97e72" },
+  { file: "theme-ayu.png", name: "Ayu Dark", accent: "#ffb454" },
+  { file: "theme-horizon.png", name: "Horizon", accent: "#e95678" },
+  { file: "theme-moonlight.png", name: "Moonlight", accent: "#82aaff" },
 ];
 
 export const ThemeMontage: React.FC = () => {
   const frame = useCurrentFrame();
-  const clipDuration = 18; // frames per theme (~0.6s each — rapid fire)
+  const clipDuration = 18; // ~0.6s per theme
 
   const themeIndex = Math.min(Math.floor(frame / clipDuration), THEMES.length - 1);
   const localFrame = frame - themeIndex * clipDuration;
@@ -42,7 +42,6 @@ export const ThemeMontage: React.FC = () => {
         background: COLORS.bg,
       }} />
 
-      {/* Theme counter */}
       <div style={{
         position: "absolute", top: 40, right: 60, zIndex: 10,
         fontSize: 18, color: COLORS.textMuted,
