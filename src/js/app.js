@@ -2667,7 +2667,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   if (!restored) {
-    await createSession('Terminal 1');
+    await createSession();
   }
 
   // Welcome message after a brief delay (let CWD resolve)

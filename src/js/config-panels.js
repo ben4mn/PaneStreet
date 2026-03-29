@@ -464,9 +464,11 @@ async function renderSettingsTab(tab) {
     container.querySelector('#browse-dir').onclick = async () => {
       try {
         const result = await invoke('plugin:dialog|open', {
-          directory: true,
-          multiple: false,
-          title: 'Choose Default Directory',
+          options: {
+            directory: true,
+            multiple: false,
+            title: 'Choose Default Directory',
+          },
         });
         if (result) {
           container.querySelector('#pref-default-dir').value = result;
