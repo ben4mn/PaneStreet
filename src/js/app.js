@@ -1887,6 +1887,23 @@ function matchesShortcut(e, id, bindings) {
 }
 
 function setupShortcuts() {
+  // Capture-phase handler for Shift+Enter — fires BEFORE xterm.js sees the event.
+  // Sends CSI u escape sequence so Claude Code interprets it as a newline.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const session = sessions[focusedIndex];
+      if (session?.terminal?.sessionId) {
+        e.preventDefault();
+        e.stopPropagation();
+        const encoder = new TextEncoder();
+        invoke('write_to_pty', {
+          sessionId: session.terminal.sessionId,
+          data: Array.from(encoder.encode('\x1b[13;2u')),
+        });
+      }
+    }
+  }, true); // capture phase
+
   // Default bindings (used as fallback)
   const DEFAULTS = {
     'close-panel':    { key: 'Escape',  meta: false, shift: false },

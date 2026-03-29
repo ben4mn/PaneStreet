@@ -91,24 +91,9 @@ export class TerminalSession {
       return true;
     });
 
-    // Send CSI u encoded keys for Shift+Enter (and other modified keys when kitty mode is active)
-    this.term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== 'keydown') return true;
-
-      // Shift+Enter: always send CSI u, even without kitty mode enabled,
-      // as a baseline for Claude Code compatibility
-      if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey) {
-        if (this.sessionId) {
-          const encoder = new TextEncoder();
-          invoke('write_to_pty', {
-            sessionId: this.sessionId,
-            data: Array.from(encoder.encode('\x1b[13;2u')),
-          });
-        }
-        return false;
-      }
-      return true;
-    });
+    // Note: Shift+Enter is handled by the capture-phase document keydown handler
+    // in app.js, which fires before xterm sees the event. This ensures the CSI u
+    // sequence reaches the PTY without xterm's default \r handling interfering.
 
     // Register OSC handlers for terminal notifications (OSC 9, 99, 777)
     // OSC 9: iTerm2-style growl notification
