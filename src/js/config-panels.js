@@ -1030,6 +1030,7 @@ const PRESET_THEMES = {
       '--bg-app': '#2e3440', '--bg-sidebar': '#2b303b', '--bg-pane': '#272c36', '--bg-header': '#2e3440',
       '--bg-footer': '#2e3440', '--bg-card': '#3b4252', '--text-primary': '#d8dee9', '--text-secondary': '#81a1c1',
       '--text-bright': '#eceff4', '--text-muted': '#7b88a1', '--accent': '#88c0d0', '--accent-light': '#8fbcbb',
+      '--accent-fg': '#2e3440',
     },
     terminal: {
       background: '#272c36', foreground: '#d8dee9', cursor: '#d8dee9',
@@ -1060,6 +1061,7 @@ const PRESET_THEMES = {
       '--bg-app': '#282828', '--bg-sidebar': '#1d2021', '--bg-pane': '#1d2021', '--bg-header': '#282828',
       '--bg-footer': '#282828', '--bg-card': '#3c3836', '--text-primary': '#ebdbb2', '--text-secondary': '#a89984',
       '--text-bright': '#fbf1c7', '--text-muted': '#928374', '--accent': '#fe8019', '--accent-light': '#fabd2f',
+      '--accent-fg': '#1d2021',
     },
     terminal: {
       background: '#1d2021', foreground: '#ebdbb2', cursor: '#ebdbb2',
@@ -1105,6 +1107,7 @@ const PRESET_THEMES = {
       '--bg-app': '#1e1e2e', '--bg-sidebar': '#181825', '--bg-pane': '#11111b', '--bg-header': '#1e1e2e',
       '--bg-footer': '#1e1e2e', '--bg-card': '#313244', '--text-primary': '#cdd6f4', '--text-secondary': '#a6adc8',
       '--text-bright': '#ffffff', '--text-muted': '#7f849c', '--accent': '#cba6f7', '--accent-light': '#f5c2e7',
+      '--accent-fg': '#1e1e2e',
     },
     terminal: {
       background: '#11111b', foreground: '#cdd6f4', cursor: '#f5e0dc',
@@ -1120,6 +1123,7 @@ const PRESET_THEMES = {
       '--bg-app': '#191724', '--bg-sidebar': '#1f1d2e', '--bg-pane': '#13111e', '--bg-header': '#191724',
       '--bg-footer': '#191724', '--bg-card': '#26233a', '--text-primary': '#e0def4', '--text-secondary': '#908caa',
       '--text-bright': '#ffffff', '--text-muted': '#908caa', '--accent': '#ebbcba', '--accent-light': '#f6c177',
+      '--accent-fg': '#191724',
     },
     terminal: {
       background: '#13111e', foreground: '#e0def4', cursor: '#524f67',
@@ -1150,6 +1154,7 @@ const PRESET_THEMES = {
       '--bg-app': '#2d353b', '--bg-sidebar': '#272e33', '--bg-pane': '#232a2e', '--bg-header': '#2d353b',
       '--bg-footer': '#2d353b', '--bg-card': '#374145', '--text-primary': '#d3c6aa', '--text-secondary': '#9da9a0',
       '--text-bright': '#e6ddc4', '--text-muted': '#7a8478', '--accent': '#a7c080', '--accent-light': '#83c092',
+      '--accent-fg': '#272e33',
     },
     terminal: {
       background: '#232a2e', foreground: '#d3c6aa', cursor: '#d3c6aa',
@@ -1165,6 +1170,7 @@ const PRESET_THEMES = {
       '--bg-app': '#262335', '--bg-sidebar': '#211e2e', '--bg-pane': '#1b182a', '--bg-header': '#262335',
       '--bg-footer': '#262335', '--bg-card': '#312c42', '--text-primary': '#e0d8f0', '--text-secondary': '#a599c4',
       '--text-bright': '#ffffff', '--text-muted': '#8673a8', '--accent': '#ff7edb', '--accent-light': '#36f9f6',
+      '--accent-fg': '#2b1e3b',
     },
     terminal: {
       background: '#1b182a', foreground: '#e0d8f0', cursor: '#ff7edb',
@@ -1180,6 +1186,7 @@ const PRESET_THEMES = {
       '--bg-app': '#0b0e14', '--bg-sidebar': '#0d1017', '--bg-pane': '#090c10', '--bg-header': '#0b0e14',
       '--bg-footer': '#0b0e14', '--bg-card': '#131721', '--text-primary': '#bfbdb6', '--text-secondary': '#8b8a85',
       '--text-bright': '#e6e1cf', '--text-muted': '#6c6f75', '--accent': '#e6b450', '--accent-light': '#ffb454',
+      '--accent-fg': '#0a0e14',
     },
     terminal: {
       background: '#090c10', foreground: '#bfbdb6', cursor: '#e6b450',
@@ -1256,6 +1263,10 @@ export function applyTheme(themeData) {
     // Titlebar follows header color for theme consistency
     if (themeData.colors['--bg-header']) {
       document.documentElement.style.setProperty('--bg-titlebar', themeData.colors['--bg-header']);
+    }
+    // Default accent foreground to white if theme doesn't specify
+    if (!themeData.colors['--accent-fg']) {
+      document.documentElement.style.setProperty('--accent-fg', '#ffffff');
     }
   }
   // Dispatch terminal theme update event

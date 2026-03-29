@@ -334,7 +334,7 @@ html, body {
 
 .session-card.active {
   background: var(--bg-card-active);
-  color: var(--text-bright);
+  color: var(--accent-fg);
 }
 
 .status-dot {
@@ -481,7 +481,7 @@ html, body {
 
 #toolbar-layout-toggle .mode-btn.active {
   background: var(--accent);
-  color: var(--text-bright);
+  color: var(--accent-fg);
   box-shadow: 0 1px 4px rgba(42, 109, 240, 0.3);
 }
 
@@ -1545,7 +1545,7 @@ html, body {
   width: 100%;
   padding: 4px 6px;
   background: var(--accent);
-  color: var(--text-bright);
+  color: var(--accent-fg);
   border: none;
   border-radius: var(--radius-sm);
   font-size: var(--font-size-xs);
@@ -1578,7 +1578,7 @@ html, body {
 
 .context-item:hover {
   background: var(--accent);
-  color: var(--text-bright);
+  color: var(--accent-fg);
 }
 
 /* Form toggle (worktree checkbox) */
@@ -1710,7 +1710,7 @@ html, body {
 
 #sidebar-actions button.panel-active {
   background: var(--accent);
-  color: var(--text-bright);
+  color: var(--accent-fg);
   border-color: var(--accent);
 }
 
@@ -1903,7 +1903,7 @@ html, body {
 .settings-save-btn {
   padding: 8px 20px;
   background: var(--accent);
-  color: var(--text-bright);
+  color: var(--accent-fg);
   border: none;
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
@@ -2199,7 +2199,7 @@ html, body {
 
 .api-key-row button.save-btn {
   background: var(--accent);
-  color: var(--text-bright);
+  color: var(--accent-fg);
 }
 
 .api-key-row button.delete-btn {
@@ -2312,7 +2312,7 @@ html, body {
 .memory-save-btn {
   padding: 6px 16px;
   background: var(--accent);
-  color: var(--text-bright);
+  color: var(--accent-fg);
   border: none;
   border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
@@ -2971,7 +2971,7 @@ html, body {
 
 .dialog-btn-save {
   background: var(--accent);
-  color: white;
+  color: var(--accent-fg);
 }
 
 .dialog-btn-discard {
