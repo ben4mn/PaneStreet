@@ -697,7 +697,7 @@ async function renderSettingsTab(tab) {
 
           // Replace "Check" button with "Install Update" button
           actionsEl.innerHTML = `
-            <button class="setting-browse-btn" id="install-update-btn" style="width:auto;padding:6px 16px;background:var(--accent);color:#fff">
+            <button class="setting-browse-btn" id="install-update-btn" style="width:auto;padding:6px 16px;background:var(--accent);color:var(--accent-fg)">
               Install Update
             </button>
             <span style="font-size:var(--font-size-xs);color:var(--text-muted)">v${version} → v${update.version}</span>
@@ -1226,6 +1226,7 @@ const PRESET_THEMES = {
       '--bg-app': '#0e1a2b', '--bg-sidebar': '#0b1524', '--bg-pane': '#091220', '--bg-header': '#0e1a2b',
       '--bg-footer': '#0e1a2b', '--bg-card': '#162640', '--text-primary': '#d4dce8', '--text-secondary': '#8a9bb5',
       '--text-bright': '#f0f4f8', '--text-muted': '#5e7491', '--accent': '#fddb32', '--accent-light': '#ffe680',
+      '--accent-fg': '#0e1a2b',
     },
     terminal: {
       background: '#091220', foreground: '#d4dce8', cursor: '#fddb32',
@@ -1313,25 +1314,8 @@ function renderThemeTab(container) {
       </div>
     </div>
 
-    <div class="theme-terminal-preview" id="theme-preview">
-      <div class="ttp-titlebar" style="background:${theme.colors['--bg-header']}">
-        <span class="ttp-dot" style="background:#ff5f57"></span>
-        <span class="ttp-dot" style="background:#febc2e"></span>
-        <span class="ttp-dot" style="background:#28c840"></span>
-        <span class="ttp-title" style="color:${theme.colors['--text-muted']}">Terminal</span>
-      </div>
-      <div class="ttp-body" style="background:${theme.terminal.background};color:${theme.terminal.foreground}">
-        <div><span style="color:${theme.terminal.green}">~</span> <span style="color:${theme.terminal.blue}">main</span> <span style="color:${theme.terminal.yellow}">✦</span> npm run build</div>
-        <div style="color:${theme.terminal.brightBlack}">  vite v5.4.2 building for production...</div>
-        <div style="color:${theme.terminal.brightBlack}">  transforming...</div>
-        <div>  <span style="color:${theme.terminal.cyan}">dist/index.html</span>  <span style="color:${theme.terminal.brightBlack}">0.45 kB │ gzip: 0.30 kB</span></div>
-        <div>  <span style="color:${theme.terminal.cyan}">dist/app.js</span>     <span style="color:${theme.terminal.brightBlack}">142.8 kB │ gzip: 45.2 kB</span></div>
-        <div style="color:${theme.terminal.green}">  ✓ built in 1.82s</div>
-        <div><span style="color:${theme.terminal.red}">error</span><span style="color:${theme.terminal.brightBlack}">:</span> <span style="color:${theme.terminal.white}">Missing export 'render'</span></div>
-        <div><span style="color:${theme.terminal.magenta}">warning</span><span style="color:${theme.terminal.brightBlack}">:</span> <span style="color:${theme.terminal.yellow}">Unused variable 'count'</span></div>
-        <div><span style="color:${theme.terminal.green}">~</span> <span style="color:${theme.terminal.blue}">main</span> <span style="color:${theme.colors['--accent']}">▊</span></div>
-      </div>
-    </div>
+    <div class="theme-layout">
+    <div class="theme-controls">
 
     <div class="theme-section">
       <h3>App Colors</h3>
@@ -1400,6 +1384,30 @@ function renderThemeTab(container) {
     </div>
 
     <button class="theme-reset-btn" id="theme-reset">Reset to Default</button>
+    </div>
+
+    <div class="theme-preview-panel">
+      <div class="theme-terminal-preview" id="theme-preview">
+        <div class="ttp-titlebar" style="background:${theme.colors['--bg-header']}">
+          <span class="ttp-dot" style="background:#ff5f57"></span>
+          <span class="ttp-dot" style="background:#febc2e"></span>
+          <span class="ttp-dot" style="background:#28c840"></span>
+          <span class="ttp-title" style="color:${theme.colors['--text-muted']}">Terminal</span>
+        </div>
+        <div class="ttp-body" style="background:${theme.terminal.background};color:${theme.terminal.foreground}">
+          <div><span style="color:${theme.terminal.green}">~</span> <span style="color:${theme.terminal.blue}">main</span> <span style="color:${theme.terminal.yellow}">✦</span> npm run build</div>
+          <div style="color:${theme.terminal.brightBlack}">  vite v5.4.2 building for production...</div>
+          <div style="color:${theme.terminal.brightBlack}">  transforming...</div>
+          <div>  <span style="color:${theme.terminal.cyan}">dist/index.html</span>  <span style="color:${theme.terminal.brightBlack}">0.45 kB │ gzip: 0.30 kB</span></div>
+          <div>  <span style="color:${theme.terminal.cyan}">dist/app.js</span>     <span style="color:${theme.terminal.brightBlack}">142.8 kB │ gzip: 45.2 kB</span></div>
+          <div style="color:${theme.terminal.green}">  ✓ built in 1.82s</div>
+          <div><span style="color:${theme.terminal.red}">error</span><span style="color:${theme.terminal.brightBlack}">:</span> <span style="color:${theme.terminal.white}">Missing export 'render'</span></div>
+          <div><span style="color:${theme.terminal.magenta}">warning</span><span style="color:${theme.terminal.brightBlack}">:</span> <span style="color:${theme.terminal.yellow}">Unused variable 'count'</span></div>
+          <div><span style="color:${theme.terminal.green}">~</span> <span style="color:${theme.terminal.blue}">main</span> <span style="color:${theme.colors['--accent']}">▊</span></div>
+        </div>
+      </div>
+    </div>
+    </div>
   `;
 
   // Theme dropdown

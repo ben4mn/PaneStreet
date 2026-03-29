@@ -19,6 +19,7 @@
   /* Accent */
   --accent: #2a6df0;
   --accent-light: #a8c8ff;
+  --accent-fg: #ffffff;
 
   /* Status */
   --status-working: #2a6df0;
@@ -409,14 +410,14 @@ html, body {
   gap: 10px;
   padding: 6px 14px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   font-size: var(--font-size-xs);
   z-index: 4;
 }
 #update-banner button {
   background: none;
   border: none;
-  color: #fff;
+  color: var(--accent-fg);
   cursor: pointer;
   font-size: var(--font-size-xs);
   padding: 2px 8px;
@@ -2432,12 +2433,28 @@ html, body {
   border-radius: 2px;
 }
 
+/* Theme editor side-by-side layout */
+.theme-layout {
+  display: flex;
+  gap: 20px;
+}
+.theme-controls {
+  flex: 1;
+  min-width: 0;
+}
+.theme-preview-panel {
+  width: 280px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+}
+
 /* Fake terminal preview */
 .theme-terminal-preview {
   border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid rgba(255,255,255,0.08);
-  margin-bottom: 16px;
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
