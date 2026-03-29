@@ -1942,31 +1942,48 @@ function setupStatusListener() {
     // Add to notification history and send push notification
     if (shouldNotify) {
       const notifStatus = commandCompleted ? 'CommandCompleted' : status;
-      // CommandCompleted is opt-in (default off) — skip alert panel + push if disabled
-      if (notifStatus === 'CommandCompleted' && localStorage.getItem('ps-notify-completed') !== 'true') {
-        // skip
-      } else {
+      const completedEnabled = notifStatus !== 'CommandCompleted' || localStorage.getItem('ps-notify-completed') === 'true';
+      if (completedEnabled) {
         addNotification(session.name, notifStatus, idx);
+        maybeNotify(session, notifStatus);
       }
-      maybeNotify(session, notifStatus);
     }
 
     triggerMascotBounce();
   });
 }
 
-// --- Startup Update Check ---
+// --- Update Helpers ---
+
+// Shared download+install+restart flow used by both startup banner and Settings page
+async function downloadAndInstallUpdate(update, { onProgress, onFinished, onError, onRestart } = {}) {
+  const channel = new window.__TAURI__.core.Channel();
+  channel.onmessage = (event) => {
+    if (event.event === 'Started' && onProgress) onProgress(0, event.data.contentLength || 0);
+    else if (event.event === 'Progress' && onProgress) onProgress(event.data.chunkLength, 0);
+    else if (event.event === 'Finished' && onFinished) onFinished();
+  };
+
+  await invoke('plugin:updater|download_and_install', { rid: update.rid, onEvent: channel });
+
+  setTimeout(async () => {
+    try { await invoke('plugin:process|restart'); }
+    catch (e) { if (onRestart) onRestart(e); }
+  }, 1500);
+}
+
+// Make available to config-panels.js
+window.__panestreet = window.__panestreet || {};
+window.__panestreet.downloadAndInstallUpdate = downloadAndInstallUpdate;
 
 async function checkForUpdateOnStartup() {
   try {
     const update = await invoke('plugin:updater|check', {});
     if (!update) return;
 
-    // Don't nag if user already dismissed this version
     const dismissed = localStorage.getItem('ps-update-dismissed');
     if (dismissed === update.version) return;
 
-    // Create a non-intrusive banner at the top of the content area
     const banner = document.createElement('div');
     banner.id = 'update-banner';
     banner.innerHTML = `
@@ -1975,7 +1992,7 @@ async function checkForUpdateOnStartup() {
       <button id="update-banner-dismiss">&times;</button>
     `;
     const main = document.getElementById('main');
-    main.insertBefore(banner, main.children[1]); // after toolbar
+    main.insertBefore(banner, main.children[1]);
 
     banner.querySelector('#update-banner-dismiss').addEventListener('click', () => {
       localStorage.setItem('ps-update-dismissed', update.version);
@@ -1988,23 +2005,10 @@ async function checkForUpdateOnStartup() {
       installBtn.textContent = 'Downloading...';
 
       try {
-        const channel = new window.__TAURI__.core.Channel();
-        channel.onmessage = (event) => {
-          if (event.event === 'Finished') {
-            installBtn.textContent = 'Restarting...';
-          }
-        };
-
-        await invoke('plugin:updater|download_and_install', {
-          rid: update.rid,
-          onEvent: channel,
+        await downloadAndInstallUpdate(update, {
+          onFinished: () => { installBtn.textContent = 'Restarting...'; },
+          onRestart: () => { installBtn.textContent = 'Restart manually'; },
         });
-
-        setTimeout(async () => {
-          try { await invoke('plugin:process|restart'); }
-          catch { installBtn.textContent = 'Restart manually'; }
-        }, 1500);
-
       } catch (err) {
         console.warn('[update] Install failed:', err);
         installBtn.textContent = 'Failed — try Settings';
@@ -2012,7 +2016,6 @@ async function checkForUpdateOnStartup() {
       }
     });
   } catch (err) {
-    // Silently fail — updater not configured or no network
     console.log('[update] Startup check skipped:', err);
   }
 }
@@ -2566,8 +2569,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Window drag via Tauri startDragging (replaces CSS -webkit-app-region: drag)
-  // Only skip actual interactive elements — empty gaps between buttons are still draggable
+  // Window drag via Tauri startDragging — skip interactive elements only
   document.getElementById('toolbar').addEventListener('mousedown', (e) => {
     if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select') || e.target.closest('a')) return;
     e.preventDefault();

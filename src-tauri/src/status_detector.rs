@@ -164,17 +164,15 @@ fn analyze_buffer(buffer: &[u8]) -> SessionStatus {
         return SessionStatus::ClaudeFinished;
     }
 
-    // Check for common error patterns
+    // Check for common error patterns (conservative to avoid false positives
+    // during normal compiler output, log lines, etc.)
     if tail.contains("command not found")
         || tail.contains("No such file or directory")
-        || tail.contains("FATAL")
         || tail.contains("panic:")
         || tail.contains("Traceback (most recent call last)")
-        || tail.contains("error:")
-        || tail.contains("Error:")
-        || tail.contains("SyntaxError")
-        || tail.contains("TypeError")
-        || tail.contains("ReferenceError")
+        || tail.contains("SyntaxError:")
+        || tail.contains("TypeError:")
+        || tail.contains("ReferenceError:")
     {
         return SessionStatus::Error;
     }

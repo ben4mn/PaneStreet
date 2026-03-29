@@ -711,12 +711,10 @@ async function renderSettingsTab(tab) {
             let downloadedBytes = 0;
 
             try {
-              const channel = new window.__TAURI__.core.Channel();
-              channel.onmessage = (event) => {
-                if (event.event === 'Started' && event.data.contentLength) {
-                  totalBytes = event.data.contentLength;
-                } else if (event.event === 'Progress') {
-                  downloadedBytes += event.data.chunkLength;
+              await window.__panestreet.downloadAndInstallUpdate(update, {
+                onProgress: (chunkLen, contentLen) => {
+                  if (contentLen > 0) totalBytes = contentLen;
+                  downloadedBytes += chunkLen;
                   if (totalBytes > 0) {
                     const pct = Math.min(100, Math.round((downloadedBytes / totalBytes) * 100));
                     progressBar.style.width = pct + '%';
@@ -724,30 +722,18 @@ async function renderSettingsTab(tab) {
                   } else {
                     progressText.textContent = Math.round(downloadedBytes / 1024) + ' KB downloaded';
                   }
-                } else if (event.event === 'Finished') {
+                },
+                onFinished: () => {
                   progressBar.style.width = '100%';
                   progressText.textContent = 'Installing...';
                   installBtn.textContent = 'Restarting...';
-                }
-              };
-
-              await invoke('plugin:updater|download_and_install', {
-                rid: update.rid,
-                onEvent: channel,
-              });
-
-              msgEl.textContent = 'Update installed! Restarting...';
-              msgEl.style.color = 'var(--status-idle)';
-
-              // Relaunch after brief delay so user sees the message
-              setTimeout(async () => {
-                try {
-                  await invoke('plugin:process|restart');
-                } catch (e) {
+                  msgEl.textContent = 'Update installed! Restarting...';
+                  msgEl.style.color = 'var(--status-idle)';
+                },
+                onRestart: () => {
                   msgEl.textContent = 'Update installed. Please restart the app manually.';
-                }
-              }, 1500);
-
+                },
+              });
             } catch (err) {
               msgEl.textContent = 'Download failed: ' + err;
               msgEl.style.color = 'var(--status-exited)';
