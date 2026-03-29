@@ -57,9 +57,47 @@ export class TerminalSession {
     this.term.loadAddon(this.fitAddon);
     this.term.loadAddon(new WebLinksAddon());
 
-    // Send CSI u escape sequence for Shift+Enter so Claude Code recognizes it as newline
+    // Kitty keyboard protocol support — Claude Code queries this on startup
+    // to decide whether Shift+Enter (and other modified keys) are supported.
+    this._kittyKeyboardFlags = 0;
+    this._kittyKeyboardStack = [];
+
+    // Query: CSI ? u — respond with current flags so Claude Code knows we support it
+    this.term.parser.registerCsiHandler({ prefix: '?', final: 'u' }, (params) => {
+      if (this.sessionId) {
+        const encoder = new TextEncoder();
+        invoke('write_to_pty', {
+          sessionId: this.sessionId,
+          data: Array.from(encoder.encode(`\x1b[?${this._kittyKeyboardFlags}u`)),
+        });
+      }
+      return true;
+    });
+
+    // Enable/push: CSI > flags u — application requests enhanced keyboard mode
+    this.term.parser.registerCsiHandler({ prefix: '>', final: 'u' }, (params) => {
+      this._kittyKeyboardStack.push(this._kittyKeyboardFlags);
+      this._kittyKeyboardFlags = params.length ? params[0] : 0;
+      return true;
+    });
+
+    // Disable/pop: CSI < u — application reverts keyboard mode
+    this.term.parser.registerCsiHandler({ prefix: '<', final: 'u' }, (params) => {
+      const count = (params.length && params[0]) ? params[0] : 1;
+      for (let i = 0; i < count && this._kittyKeyboardStack.length; i++) {
+        this._kittyKeyboardFlags = this._kittyKeyboardStack.pop();
+      }
+      if (!this._kittyKeyboardStack.length) this._kittyKeyboardFlags = 0;
+      return true;
+    });
+
+    // Send CSI u encoded keys for Shift+Enter (and other modified keys when kitty mode is active)
     this.term.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      if (e.type !== 'keydown') return true;
+
+      // Shift+Enter: always send CSI u, even without kitty mode enabled,
+      // as a baseline for Claude Code compatibility
+      if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey) {
         if (this.sessionId) {
           const encoder = new TextEncoder();
           invoke('write_to_pty', {
