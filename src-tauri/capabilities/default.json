@@ -5,8 +5,13 @@
   "permissions": [
     "core:default",
     "core:event:default",
+    "core:window:allow-start-dragging",
     "opener:default",
     "dialog:default",
+    "notification:default",
+    "notification:allow-notify",
+    "notification:allow-request-permission",
+    "notification:allow-is-permission-granted",
     "updater:default",
     "process:allow-restart"
   ]

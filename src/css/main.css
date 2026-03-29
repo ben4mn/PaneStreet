@@ -225,6 +225,8 @@ html, body {
 #sidebar.collapsed .session-card[data-status="Idle"]            { border-bottom-color: var(--status-idle); }
 #sidebar.collapsed .session-card[data-status="WaitingForInput"] { border-bottom-color: var(--status-waiting); }
 #sidebar.collapsed .session-card[data-status="NeedsPermission"] { border-bottom-color: var(--status-permission); }
+#sidebar.collapsed .session-card[data-status="Error"]           { border-bottom-color: var(--status-exited); }
+#sidebar.collapsed .session-card[data-status="ClaudeFinished"]  { border-bottom-color: var(--status-idle); }
 #sidebar.collapsed .session-card[data-status="Exited"]          { border-bottom-color: var(--status-exited); }
 
 #sidebar.collapsed .session-card .status-dot {
@@ -325,6 +327,8 @@ html, body {
 .session-card[data-status="Idle"]            { border-left-color: var(--status-idle); }
 .session-card[data-status="WaitingForInput"] { border-left-color: var(--status-waiting); }
 .session-card[data-status="NeedsPermission"] { border-left-color: var(--status-permission); }
+.session-card[data-status="Error"]           { border-left-color: var(--status-exited); }
+.session-card[data-status="ClaudeFinished"]  { border-left-color: var(--status-idle); }
 .session-card[data-status="Exited"]          { border-left-color: var(--status-exited); }
 
 .session-card.active {
@@ -685,6 +689,8 @@ html, body {
 .pane[data-status="Idle"]            { border-color: rgba(74, 222, 128, 0.35); }
 .pane[data-status="WaitingForInput"] { border-color: rgba(245, 158, 11, 0.5); }
 .pane[data-status="NeedsPermission"] { border-color: rgba(245, 158, 11, 0.5); }
+.pane[data-status="Error"]           { border-color: rgba(239, 68, 68, 0.5); }
+.pane[data-status="ClaudeFinished"]  { border-color: rgba(74, 222, 128, 0.35); }
 .pane[data-status="Exited"]          { border-color: rgba(239, 68, 68, 0.5); }
 
 /* Focused pane: brighter border + status-colored glow */
@@ -692,6 +698,8 @@ html, body {
 .pane.focused[data-status="Idle"]            { border-color: var(--status-idle); box-shadow: 0 0 0 1px var(--status-idle), 0 0 12px rgba(74, 222, 128, 0.2); }
 .pane.focused[data-status="WaitingForInput"] { border-color: var(--status-waiting); box-shadow: 0 0 0 1px var(--status-waiting), 0 0 12px rgba(245, 158, 11, 0.2); }
 .pane.focused[data-status="NeedsPermission"] { border-color: var(--status-permission); box-shadow: 0 0 0 1px var(--status-permission), 0 0 12px rgba(245, 158, 11, 0.2); }
+.pane.focused[data-status="Error"]           { border-color: var(--status-exited); box-shadow: 0 0 0 1px var(--status-exited), 0 0 12px rgba(239, 68, 68, 0.2); }
+.pane.focused[data-status="ClaudeFinished"]  { border-color: var(--status-idle); box-shadow: 0 0 0 1px var(--status-idle), 0 0 12px rgba(74, 222, 128, 0.2); }
 .pane.focused[data-status="Exited"]          { border-color: var(--status-exited); box-shadow: 0 0 0 1px var(--status-exited), 0 0 12px rgba(239, 68, 68, 0.2); }
 
 /* Notification ring — pulsing glow on unfocused panes that need attention */
@@ -700,6 +708,12 @@ html, body {
 }
 .pane.notify-ring:not(.focused)[data-status="NeedsPermission"] {
   animation: notify-ring-permission 2s ease-in-out infinite;
+}
+.pane.notify-ring:not(.focused)[data-status="Error"] {
+  animation: notify-ring-exited 2s ease-in-out infinite;
+}
+.pane.notify-ring:not(.focused)[data-status="ClaudeFinished"] {
+  animation: notify-ring-waiting 2s ease-in-out infinite;
 }
 .pane.notify-ring:not(.focused)[data-status="Exited"] {
   animation: notify-ring-exited 2s ease-in-out infinite;
@@ -728,6 +742,12 @@ html, body {
   height: 8px;
   border-radius: 50%;
   animation: notify-badge-pulse 2s ease-in-out infinite;
+}
+.session-card.notify-badge[data-status="Error"]::before {
+  background: var(--status-exited);
+}
+.session-card.notify-badge[data-status="ClaudeFinished"]::before {
+  background: var(--status-idle);
 }
 .session-card.notify-badge[data-status="WaitingForInput"]::before,
 .session-card.notify-badge[data-status="NeedsPermission"]::before {
