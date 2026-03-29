@@ -107,6 +107,13 @@ No config files. No arcane keybindings to memorize. Just open it and start worki
 
 ## Installation
 
+### Homebrew (recommended)
+
+```bash
+brew tap ben4mn/panestreet
+brew install --cask panestreet
+```
+
 ### Download (macOS)
 
 Grab the latest `.dmg` from the [Releases page](https://github.com/ben4mn/PaneStreet/releases/latest).
