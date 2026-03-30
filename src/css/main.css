@@ -1243,8 +1243,7 @@ html, body {
 }
 
 /* Facing left (JS toggles this) */
-#footer-mascot.face-left { transform: scaleX(-1); }
-#footer-mascot.face-left .mascot-speech { transform: translateX(-50%) scaleX(-1); }
+#footer-mascot.face-left svg { transform: scaleX(-1); }
 
 /* --- Default idle: gentle rise-and-fall (always on) --- */
 #footer-mascot .robot-body {
@@ -1623,7 +1622,7 @@ html, body {
 #footer-mascot.exited * { animation: none !important; }
 #footer-mascot.dragging {
   cursor: grabbing;
-  transform: scale(1.1) translateY(-4px);
+  transform: scale(1.08);
   transition: transform 0.15s ease !important;
 }
 
@@ -1642,10 +1641,6 @@ html, body {
   white-space: normal;
   word-wrap: break-word;
   max-width: 320px;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;

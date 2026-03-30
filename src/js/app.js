@@ -2461,10 +2461,11 @@ function robotInit() {
   // Force layout before re-enabling transition
   void robotEl.offsetLeft;
 
-  // --- Drag handling ---
+  // --- Drag handling (pick up above line, drop back down) ---
   let isDragging = false;
   let hasDragged = false;
   let dragStartX = 0;
+  let dragStartY = 0;
   let dragStartLeft = 0;
 
   overlay?.addEventListener('mousedown', (e) => {
@@ -2476,11 +2477,13 @@ function robotInit() {
     isDragging = true;
     hasDragged = false;
     dragStartX = e.clientX;
+    dragStartY = e.clientY;
     dragStartLeft = parseInt(robotEl.style.left) || 0;
 
     clearTimeout(robotTimer);
     robotClearActivity();
     robotEl.style.transition = 'none';
+    robotEl.style.bottom = '0px';
     robotEl.classList.add('dragging');
     e.preventDefault();
   });
@@ -2488,16 +2491,28 @@ function robotInit() {
   document.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
     const deltaX = e.clientX - dragStartX;
-    if (Math.abs(deltaX) > 3) hasDragged = true;
+    const deltaY = dragStartY - e.clientY; // up = positive
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) hasDragged = true;
     const ow = overlay ? overlay.clientWidth : window.innerWidth;
     const newLeft = Math.max(4, Math.min(ow - 72, dragStartLeft + deltaX));
     robotEl.style.left = newLeft + 'px';
+    // Allow picking up above the bottom line
+    const liftY = Math.max(0, deltaY);
+    robotEl.style.bottom = liftY + 'px';
   });
 
   document.addEventListener('mouseup', () => {
     if (!isDragging) return;
     isDragging = false;
     robotEl.classList.remove('dragging');
+    // Drop animation — fall back to the bottom
+    const currentBottom = parseInt(robotEl.style.bottom) || 0;
+    if (currentBottom > 0) {
+      // Bounce-drop: fast fall with a little bounce
+      robotEl.style.transition = 'bottom 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+      robotEl.style.bottom = '0px';
+      setTimeout(() => { robotEl.style.transition = ''; }, 350);
+    }
     if (hasDragged) {
       showSpeech(['Whoa!', 'Easy there!', 'New spot, nice.', 'I like it here.'][Math.floor(Math.random() * 4)], 2000);
       setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
