@@ -1129,8 +1129,8 @@ html, body {
   position: absolute;
   bottom: 0;
   left: 4px;
-  width: 56px;
-  height: 56px;
+  width: 68px;
+  height: 68px;
   cursor: pointer;
   transition: left 10s linear;
   overflow: visible;
@@ -1621,11 +1621,16 @@ html, body {
   filter: grayscale(1);
 }
 #footer-mascot.exited * { animation: none !important; }
+#footer-mascot.dragging {
+  cursor: grabbing;
+  transform: scale(1.1) translateY(-4px);
+  transition: transform 0.15s ease !important;
+}
 
 /* Speech bubble */
 .mascot-speech {
   position: absolute;
-  bottom: 60px;
+  bottom: 72px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--bg-card);
@@ -1634,10 +1639,13 @@ html, body {
   font-family: var(--font-ui);
   padding: 4px 10px;
   border-radius: 6px;
-  white-space: nowrap;
-  max-width: 240px;
+  white-space: normal;
+  word-wrap: break-word;
+  max-width: 320px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;

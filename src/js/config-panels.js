@@ -245,6 +245,7 @@ async function renderSettingsTab(tab) {
     const notifyOnExited = localStorage.getItem('ps-notify-exited') !== 'false';
     const notifyOnCompleted = localStorage.getItem('ps-notify-completed') === 'true';
     const notifyOnError = localStorage.getItem('ps-notify-error') !== 'false';
+    const notifyOnClaudeInput = localStorage.getItem('ps-notify-claude-input') !== 'false';
     const notifyOnClaudeFinished = localStorage.getItem('ps-notify-claude-finished') !== 'false';
     const notifySound = localStorage.getItem('ps-notify-sound') !== 'false';
     const robotEnabled = localStorage.getItem('ps-robot-enabled') !== 'false';
@@ -394,6 +395,14 @@ async function renderSettingsTab(tab) {
           </div>
 
           <div class="setting-row-inline" style="padding:4px 0">
+            <div class="setting-label">Claude needs input (plan, questions)</div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-notify-claude-input" ${notifyOnClaudeInput ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row-inline" style="padding:4px 0">
             <div class="setting-label">Claude task completed</div>
             <label class="setting-switch">
               <input type="checkbox" id="pref-notify-claude-finished" ${notifyOnClaudeFinished ? 'checked' : ''} />
@@ -509,6 +518,7 @@ async function renderSettingsTab(tab) {
       localStorage.setItem('ps-notify-exited', container.querySelector('#pref-notify-exited').checked);
       localStorage.setItem('ps-notify-completed', container.querySelector('#pref-notify-completed').checked);
       localStorage.setItem('ps-notify-error', container.querySelector('#pref-notify-error').checked);
+      localStorage.setItem('ps-notify-claude-input', container.querySelector('#pref-notify-claude-input').checked);
       localStorage.setItem('ps-notify-claude-finished', container.querySelector('#pref-notify-claude-finished').checked);
       localStorage.setItem('ps-notify-sound', container.querySelector('#pref-notify-sound').checked);
       const robotChecked = container.querySelector('#pref-robot').checked;

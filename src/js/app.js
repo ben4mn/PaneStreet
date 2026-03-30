@@ -443,6 +443,47 @@ function updateLayoutToggleUI() {
   }
 }
 
+function autoTile() {
+  const grid = document.getElementById('pane-grid');
+  if (!grid) return;
+  const gridRect = grid.getBoundingClientRect();
+  const visible = sessions.filter(s => !s.minimized);
+  const count = visible.length;
+  if (count === 0) return;
+
+  // Switch to freeform if in auto mode
+  if (layoutMode === 'auto') {
+    toggleLayoutMode();
+  }
+
+  const cols = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / cols);
+  const gap = 4;
+  const cellW = gridRect.width / cols;
+  const cellH = gridRect.height / rows;
+
+  visible.forEach((s, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const rect = {
+      x: col * cellW + gap,
+      y: row * cellH + gap,
+      width: cellW - gap * 2,
+      height: cellH - gap * 2,
+    };
+    s.freeformRect = rect;
+    s.pane.style.transition = 'left 0.3s ease, top 0.3s ease, width 0.3s ease, height 0.3s ease';
+    s.pane.style.left = rect.x + 'px';
+    s.pane.style.top = rect.y + 'px';
+    s.pane.style.width = rect.width + 'px';
+    s.pane.style.height = rect.height + 'px';
+    setTimeout(() => { s.pane.style.transition = ''; }, 350);
+  });
+
+  setTimeout(() => fitVisibleTerminals(), 350);
+  saveSessionState();
+}
+
 function createLayoutToggle() {
   const container = document.getElementById('toolbar-layout-toggle');
   if (!container) return;
@@ -451,6 +492,7 @@ function createLayoutToggle() {
   const gridSvg = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>';
   const freeSvg = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="7" height="6" rx="1"/><rect x="6" y="8" width="9" height="6" rx="1"/></svg>';
   const snapSvg = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 4V1h3M13 1h2v3M1 12v3h3M15 13v2h-2"/><rect x="4" y="4" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/></svg>';
+  const tileSvg = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M8 3v10M3 8h10" stroke-dasharray="1.5 1.5"/></svg>';
 
   const autoBtn = document.createElement('button');
   autoBtn.className = 'mode-btn';
@@ -481,10 +523,18 @@ function createLayoutToggle() {
   snapBtn.style.display = 'none';
   snapBtn.addEventListener('click', () => toggleSnapToGrid());
 
+  const tileBtn = document.createElement('button');
+  tileBtn.className = 'mode-btn';
+  tileBtn.dataset.mode = 'tile';
+  tileBtn.innerHTML = tileSvg + '<span class="mode-label">Tile</span>';
+  tileBtn.title = 'Auto-tile all panes (\u2318\u21E7T)';
+  tileBtn.addEventListener('click', () => autoTile());
+
   container.appendChild(autoBtn);
   container.appendChild(freeBtn);
   container.appendChild(divider);
   container.appendChild(snapBtn);
+  container.appendChild(tileBtn);
 
   // Set initial active state
   updateLayoutToggleUI();
@@ -983,9 +1033,9 @@ async function createSession(restoreCwd, restoreScrollback) {
 
   // Watch for /rename command output from Claude Code
   terminal.onOutput((chunk, buffer) => {
-    // Claude Code /rename outputs the new conversation name
-    // Look for patterns like "Renamed conversation to: xxx" or similar
-    const renameMatch = buffer.match(/(?:Renamed (?:conversation )?to|Session renamed to)[:\s]+["']?([^\n"']+?)["']?\s*$/);
+    // Claude Code /rename outputs "Session renamed to: <name>" with ANSI styling
+    const clean = buffer.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+    const renameMatch = clean.match(/(?:Renamed (?:conversation )?to|Session renamed to)[:\s]+["']?([^\n"']+?)["']?\s*$/);
     if (renameMatch) {
       const newName = renameMatch[1].trim();
       if (newName && newName !== session.name) {
@@ -1916,6 +1966,7 @@ function setupShortcuts() {
     'minimize':       { key: 'm',       meta: true,  shift: false },
     'restore-all':    { key: 'm',       meta: true,  shift: true  },
     'layout-mode':    { key: 'g',       meta: true,  shift: true  },
+    'auto-tile':      { key: 't',       meta: true,  shift: true  },
     'prev-pane':      { key: '[',       meta: true,  shift: true  },
     'next-pane':      { key: ']',       meta: true,  shift: true  },
     'notifications':  { key: 'i',       meta: true,  shift: false },
@@ -1936,6 +1987,7 @@ function setupShortcuts() {
     'minimize':       () => { if (sessions.length > 0) minimizeSession(focusedIndex); return true; },
     'restore-all':    () => { restoreAllSessions(); return true; },
     'layout-mode':    () => { toggleLayoutMode(); return true; },
+    'auto-tile':      () => { autoTile(); return true; },
     'prev-pane':      () => { if (isAnyPanelActive()) hidePanel(); focusNextVisible(focusedIndex, -1); return true; },
     'next-pane':      () => { if (isAnyPanelActive()) hidePanel(); focusNextVisible(focusedIndex, 1); return true; },
     'notifications':  () => { toggleNotificationPanel(); return true; },
@@ -2032,7 +2084,7 @@ function renderNotificationPanel() {
       Error: 'Something went wrong',
       ClaudeFinished: 'Claude is done',
     }[n.status] || n.status;
-    const dotColorMap = { WaitingForInput: 'waiting', NeedsPermission: 'waiting', Exited: 'exited', Error: 'exited', ClaudeFinished: 'idle', CommandCompleted: 'idle' };
+    const dotColorMap = { WaitingForInput: 'waiting', NeedsPermission: 'waiting', ClaudeNeedsInput: 'waiting', Exited: 'exited', Error: 'exited', ClaudeFinished: 'idle', CommandCompleted: 'idle' };
     const dotColor = dotColorMap[statusClass] || 'working';
     return `<div class="notif-item" data-index="${n.sessionIndex}">
       <span class="notif-dot" style="background:var(--status-${dotColor})"></span>
@@ -2096,6 +2148,7 @@ const STATUS_COLORS = {
   Idle: 'var(--status-idle)',
   WaitingForInput: 'var(--status-waiting)',
   NeedsPermission: 'var(--status-permission)',
+  ClaudeNeedsInput: 'var(--status-waiting)',
   Error: 'var(--status-exited)',
   ClaudeFinished: 'var(--status-idle)',
   Exited: 'var(--status-exited)',
@@ -2103,26 +2156,36 @@ const STATUS_COLORS = {
 
 async function maybeNotify(session, status) {
   console.log('[notify]', status, 'windowFocused:', windowFocused);
-  if (windowFocused) {
-    // If in-app but on a different terminal, have the mascot relay the notification
-    const idx = sessions.indexOf(session);
-    if (idx >= 0 && idx !== focusedIndex && localStorage.getItem('ps-robot-enabled') !== 'false') {
-      const friendlyStatus = {
-        WaitingForInput: 'needs attention',
-        NeedsPermission: 'needs approval',
-        Error: 'has a problem',
-        ClaudeFinished: 'Claude is done',
-      }[status];
-      if (friendlyStatus) showSpeech(`${session.name} ${friendlyStatus}`, 4000);
-    }
-    return;
+  const idx = sessions.indexOf(session);
+  const isActiveTab = idx >= 0 && idx === focusedIndex;
+  // Claude-specific events should notify even when window is focused (if different tab)
+  const claudeEvents = ['WaitingForInput', 'NeedsPermission', 'ClaudeNeedsInput', 'ClaudeFinished'];
+  const isClaudeEvent = claudeEvents.includes(status);
+
+  // Mascot relay for in-app, different tab
+  if (windowFocused && !isActiveTab && localStorage.getItem('ps-robot-enabled') !== 'false') {
+    const friendlyStatus = {
+      WaitingForInput: 'needs attention',
+      NeedsPermission: 'needs approval',
+      ClaudeNeedsInput: 'needs your input',
+      Error: 'has a problem',
+      ClaudeFinished: 'Claude is done',
+    }[status];
+    if (friendlyStatus) showSpeech(`${session.name} ${friendlyStatus}`, 4000);
   }
+
+  // Skip native notifications if this is the active tab and window is focused
+  if (isActiveTab && windowFocused) return;
+  // Skip non-Claude events when window is focused (only mascot relay above)
+  if (windowFocused && !isClaudeEvent) return;
+
   if (localStorage.getItem('ps-notifications') === 'false') return;
 
   // Check per-status toggles
   const statusToggleMap = {
     WaitingForInput: 'ps-notify-waiting',
     NeedsPermission: 'ps-notify-permission',
+    ClaudeNeedsInput: 'ps-notify-claude-input',
     Exited: 'ps-notify-exited',
     CommandCompleted: 'ps-notify-completed',
     Error: 'ps-notify-error',
@@ -2140,6 +2203,7 @@ async function maybeNotify(session, status) {
   const messages = {
     WaitingForInput: 'needs your attention',
     NeedsPermission: 'is asking for your approval',
+    ClaudeNeedsInput: 'Claude needs your input',
     Exited: 'has finished',
     CommandCompleted: 'finished running a command',
     Error: 'ran into a problem',
@@ -2201,7 +2265,7 @@ function setupStatusListener() {
     }
 
     // Notification ring on unfocused panes that need attention
-    const needsAttention = ['WaitingForInput', 'NeedsPermission', 'Exited', 'Error', 'ClaudeFinished'].includes(status);
+    const needsAttention = ['WaitingForInput', 'NeedsPermission', 'ClaudeNeedsInput', 'Exited', 'Error', 'ClaudeFinished'].includes(status);
     const commandCompleted = (previousStatus === 'Working' && status === 'Idle');
     const shouldNotify = needsAttention || commandCompleted;
 
@@ -2397,11 +2461,57 @@ function robotInit() {
   // Force layout before re-enabling transition
   void robotEl.offsetLeft;
 
+  // --- Drag handling ---
+  let isDragging = false;
+  let hasDragged = false;
+  let dragStartX = 0;
+  let dragStartLeft = 0;
+
+  overlay?.addEventListener('mousedown', (e) => {
+    const rect = robotEl.getBoundingClientRect();
+    const dx = e.clientX - (rect.left + rect.width / 2);
+    const dy = e.clientY - (rect.top + rect.height / 2);
+    if (Math.abs(dx) > 40 || Math.abs(dy) > 50) return;
+
+    isDragging = true;
+    hasDragged = false;
+    dragStartX = e.clientX;
+    dragStartLeft = parseInt(robotEl.style.left) || 0;
+
+    clearTimeout(robotTimer);
+    robotClearActivity();
+    robotEl.style.transition = 'none';
+    robotEl.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const deltaX = e.clientX - dragStartX;
+    if (Math.abs(deltaX) > 3) hasDragged = true;
+    const ow = overlay ? overlay.clientWidth : window.innerWidth;
+    const newLeft = Math.max(4, Math.min(ow - 72, dragStartLeft + deltaX));
+    robotEl.style.left = newLeft + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    robotEl.classList.remove('dragging');
+    if (hasDragged) {
+      showSpeech(['Whoa!', 'Easy there!', 'New spot, nice.', 'I like it here.'][Math.floor(Math.random() * 4)], 2000);
+      setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
+    } else {
+      if (!robotOverride) robotNext();
+    }
+  });
+
   // Click interaction — easter egg on rapid clicks
   let clickCount = 0;
   let clickResetTimer = null;
 
   overlay?.addEventListener('click', (e) => {
+    if (hasDragged) { hasDragged = false; return; }
     const rect = robotEl.getBoundingClientRect();
     const dx = e.clientX - (rect.left + rect.width / 2);
     const dy = e.clientY - (rect.top + rect.height / 2);
@@ -2657,7 +2767,7 @@ function updateMascot(status, silent = false) {
     robotClearActivity();
     robotEl.classList.add('working');
     if (!silent) showSpeech(SPEECH_WORKING[Math.floor(Math.random() * SPEECH_WORKING.length)]);
-  } else if (status === 'WaitingForInput' || status === 'NeedsPermission') {
+  } else if (status === 'WaitingForInput' || status === 'NeedsPermission' || status === 'ClaudeNeedsInput') {
     robotOverride = 'waiting';
     clearTimeout(robotTimer);
     robotClearActivity();
@@ -2687,7 +2797,17 @@ function showSpeech(text, duration = 3000) {
   const el = document.getElementById('mascot-speech');
   if (!el) return;
   el.textContent = text;
+  el.style.left = '50%';
+  el.style.transform = 'translateX(-50%)';
   el.classList.add('visible');
+  requestAnimationFrame(() => {
+    const rect = el.getBoundingClientRect();
+    if (rect.left < 8) {
+      el.style.left = `calc(50% + ${8 - rect.left}px)`;
+    } else if (rect.right > window.innerWidth - 8) {
+      el.style.left = `calc(50% - ${rect.right - window.innerWidth + 8}px)`;
+    }
+  });
   setTimeout(() => el.classList.remove('visible'), duration);
 }
 
