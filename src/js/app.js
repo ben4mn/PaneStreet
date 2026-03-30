@@ -1391,6 +1391,7 @@ function addSessionToSidebar(name, index, minimized) {
   // Click to focus
   card.addEventListener('click', () => {
     const idx = parseInt(card.dataset.index);
+    if (isAnyPanelActive()) hidePanel();
     if (sessions[idx].minimized) {
       restoreSession(idx);
     } else {
@@ -2385,7 +2386,7 @@ async function checkForUpdateOnStartup() {
 const ACTIVITIES = [
   { name: 'stand',   cls: 'act-stand',   duration: [20, 40] },
   { name: 'look',    cls: 'act-look',    duration: [8, 14] },
-  { name: 'wave',    cls: 'act-wave',    duration: [4, 6],  speech: 'Hi!' },
+  { name: 'wave',    cls: 'act-wave',    duration: [4, 6],  speech: 'Hey.' },
   { name: 'sleep',   cls: 'act-sleep',   duration: [30, 60] },
   { name: 'stretch', cls: 'act-stretch', duration: [5, 8] },
   { name: 'nod',     cls: 'act-nod',     duration: [4, 6] },
@@ -2393,54 +2394,60 @@ const ACTIVITIES = [
   { name: 'dance',   cls: 'act-dance',   duration: [4, 7] },
   { name: 'type',    cls: 'act-type',    duration: [10, 18] },
   { name: 'bounce',  cls: 'act-bounce',  duration: [3, 5] },
-  { name: 'sweep',   cls: 'act-sweep',   duration: [8, 14],  speech: 'Tidying up...' },
-  { name: 'phone',   cls: 'act-phone',   duration: [10, 20], speech: 'Mhm... mhm...' },
-  { name: 'code',    cls: 'act-code',    duration: [12, 22], speech: 'Coding...' },
+  { name: 'sweep',   cls: 'act-sweep',   duration: [8, 14],  speech: 'Tidying up.' },
+  { name: 'phone',   cls: 'act-phone',   duration: [10, 20], speech: 'Mhm... yeah... mhm.' },
+  { name: 'code',    cls: 'act-code',    duration: [12, 22], speech: 'Don\'t mind me.' },
   { name: 'mop',     cls: 'act-mop',     duration: [8, 14] },
 ];
 
 const APP_TIPS = [
-  'Cmd+N for a new terminal',
-  'Cmd+1-9 to switch sessions',
-  'Double-click a header to maximize',
-  'Cmd+Shift+E opens the file viewer',
-  'Cmd+, opens settings',
-  'Drag sidebar cards to reorder',
-  'Right-click a session to rename',
-  'Up to 6 terminals visible at once',
-  'Click me for a greeting!',
-  'Minimize sessions to the footer bar',
-  'File viewer tracks your terminal\'s directory',
-  'Custom themes in Settings > Theme',
-  'Cmd+I opens the notification panel',
-  'Cmd+Opt+Arrows to navigate between panes',
-  'Terminals emit OSC 9 for notifications',
+  'Cmd+N drops a fresh terminal. You\'re welcome.',
+  'Cmd+1-9 jumps straight to a session.',
+  'Double-click a header to go full-screen.',
+  'Cmd+Shift+E opens the file viewer.',
+  'Cmd+, opens settings. You probably knew that.',
+  'Drag sidebar cards to reorder them.',
+  'Right-click a session tab to rename it.',
+  'Up to 6 terminals visible at once.',
+  'Drag me anywhere. I don\'t mind. Much.',
+  'Minimize sessions to the footer — they\'ll wait.',
+  'File viewer follows your terminal\'s directory.',
+  'Theme picker is in Settings > Theme.',
+  'Cmd+I opens the notification panel.',
+  'Cmd+Opt+Arrows moves between panes.',
+  'You can mute me in Settings. I\'ll be fine. Probably.',
+  'Hold-click me for a surprise.',
+  'Cmd+W closes the focused terminal.',
+  'Hold Cmd and click a link to open it in the browser.',
+  'I keep an eye on your terminal output. It\'s part of the job.',
 ];
 
-const SPEECH_WORKING = ['On it!', 'Working...', 'Processing...'];
-const SPEECH_WAITING = ['Need input!', 'Your turn!', 'Waiting...'];
-const SPEECH_DONE = ['Done!', 'All set!', 'Finished!'];
-const SPEECH_CLICK = ['Hey there.', 'What\'s up?', 'Need something?', 'Sup.', 'You rang?', 'At your service.', 'Hmm?', '*waves*', 'Present.', 'Yo.'];
+const SPEECH_WORKING = ['On it.', 'Working...', 'Give me a sec.', 'Processing...', 'Crunching...', 'On the case.'];
+const SPEECH_WAITING = ['Your move.', 'Over to you.', 'Whenever you\'re ready.', 'I\'m patient.', 'Your turn.'];
+const SPEECH_DONE = ['Done.', 'There you go.', 'All set.', 'Finished.', 'Easy.', 'That\'s a wrap.'];
+const SPEECH_CLICK = ['Hey.', 'Oh, hi.', 'You need something?', 'I\'m here.', 'What\'s the word?', 'In the flesh. Mostly.', 'Ready when you are.', 'Mm?', 'Right here.', 'As you were.', 'Still here.', 'Yep?'];
 
 // Contextual quips based on terminal output patterns
 const CONTEXTUAL_QUIPS = [
-  { patterns: [/npm install|npm i |yarn add|pnpm add/i], quips: ['Installing packages...', 'Grabbing dependencies...', 'npm doing its thing...'] },
-  { patterns: [/npm run build|cargo build|vite build|webpack/i], quips: ['Building...', 'Compiling away...', 'Build in progress...'] },
-  { patterns: [/npm test|pytest|cargo test|vitest|jest/i], quips: ['Fingers crossed...', 'Running tests...', 'Testing testing...'] },
-  { patterns: [/git push/i], quips: ['Shipping it!', 'Off it goes!', 'Pushed!'] },
-  { patterns: [/git commit/i], quips: ['Good commit.', 'Saving progress...', 'Committed!'] },
-  { patterns: [/git merge|git rebase/i], quips: ['Merging...', 'Combining branches...'] },
-  { patterns: [/git pull|git fetch/i], quips: ['Pulling latest...', 'Syncing up...'] },
-  { patterns: [/docker compose|docker build/i], quips: ['Containers spinning up...', 'Docker time...'] },
-  { patterns: [/pip install|poetry add/i], quips: ['Python packages...', 'pip doing its thing...'] },
-  { patterns: [/Total cost:|Total tokens:/i], quips: ["I'd have asked Claude too.", 'Claude delivered.', 'Nice work, Claude.', 'That was fast.'] },
-  { patterns: [/error\[|Error:|SyntaxError|TypeError|panic:/i], quips: ['Oof.', "That doesn't look right...", 'Hmm...'] },
-  { patterns: [/✓ built|Successfully compiled|Build succeeded/i], quips: ['Clean build!', 'Ship it!', 'Looking good.'] },
-  { patterns: [/Downloading|downloading/], quips: ['Downloading...', 'Fetching stuff...'] },
-  { patterns: [/deploy|Deploy|DEPLOY/], quips: ['Deploying!', 'Going live...', 'Launch sequence!'] },
-  { patterns: [/lint|eslint|prettier/i], quips: ['Linting...', 'Keeping it clean...'] },
-  { patterns: [/migration|migrate/i], quips: ['Migrating...', 'Schema changes...'] },
-  { patterns: [/claude |Claude /], quips: ['Claude is thinking...', 'Let Claude cook...', 'AI at work...'] },
+  { patterns: [/npm install|npm i |yarn add|pnpm add/i], quips: ['Package time.', 'Dependencies inbound.', 'npm doing its thing.', 'Grabbing packages...'] },
+  { patterns: [/npm run build|cargo build|vite build|webpack/i], quips: ['Building...', 'Compiling.', 'Build in progress.', 'Fingers crossed.'] },
+  { patterns: [/npm test|pytest|cargo test|vitest|jest/i], quips: ['Running tests...', 'Here we go.', 'Let\'s see how this goes.', 'Tests incoming.'] },
+  { patterns: [/git push/i], quips: ['Sending it.', 'Up she goes.', 'Shipped.', 'Off it goes.'] },
+  { patterns: [/git commit/i], quips: ['Committing to the bit.', 'History is being made.', 'Saved.', 'Good commit.'] },
+  { patterns: [/git merge|git rebase/i], quips: ['Merging...', 'Here we go.', 'May the conflicts be few.'] },
+  { patterns: [/git pull|git fetch/i], quips: ['Pulling latest.', 'Syncing up.', 'What\'d I miss?'] },
+  { patterns: [/docker compose|docker build|docker run/i], quips: ['Containers, containers everywhere.', 'Docker time.', 'Spinning up...'] },
+  { patterns: [/pip install|poetry add/i], quips: ['Python packages incoming.', 'pip doing its thing.'] },
+  { patterns: [/Total cost:|Total tokens:/i], quips: ["I'd have asked Claude too.", 'Claude delivered.', 'Nice work, Claude.', 'Tokens well spent.'] },
+  { patterns: [/error\[|Error:|SyntaxError|TypeError|panic:/i], quips: ['Oof.', 'That\'s not ideal.', 'We\'ve seen worse.', 'Hmm.'] },
+  { patterns: [/✓ built|Successfully compiled|Build succeeded|Tests passed/i], quips: ['Green across the board.', 'Clean build.', 'Ship it.', 'Looking good.'] },
+  { patterns: [/Downloading|downloading/], quips: ['Downloading...', 'Fetching...'] },
+  { patterns: [/deploy|Deploy|DEPLOY/], quips: ['Going live.', 'Launch sequence.', 'Deploying...'] },
+  { patterns: [/lint|eslint|prettier/i], quips: ['Keeping it clean.', 'Linting...'] },
+  { patterns: [/migration|migrate/i], quips: ['Schema changes incoming.', 'Migrating...'] },
+  { patterns: [/claude |Claude /], quips: ['Let Claude cook.', 'AI at work.', 'Claude\'s on it.'] },
+  { patterns: [/warning|Warning/], quips: ['Heads up.', 'Worth a look.', 'A warning or two.'] },
+  { patterns: [/fatal|FATAL|killed|Killed/i], quips: ['Yikes.', 'That\'s not great.', 'F.'] },
 ];
 
 // Animation frequency settings: [idlePauseMin, idlePauseMax, contextInterval, walkChance]
@@ -2457,6 +2464,35 @@ let robotOverride = null; // status override (working/waiting/exited)
 let lastActivityIndex = -1;
 let lastContextQuip = '';
 let contextScanTimer = null;
+
+// Boredom tracking
+let robotLastInteraction = Date.now();
+function touchInteraction() { robotLastInteraction = Date.now(); }
+function idleMs() { return Date.now() - robotLastInteraction; }
+const BOREDOM_IDLE_QUIPS = ['Still here.', 'Just vibing.', '...', 'Hello?', 'Anybody home?', 'Waiting patiently.'];
+const BOREDOM_WALK_QUIPS = ['Right. Going for a walk.', 'Stretching my legs.', 'Be right back.'];
+
+// Hold-to-secret
+const SECRET_REACTIONS = [
+  () => { robotEl.classList.add('act-dance'); showSpeech('You found me.', 4000); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+  () => { robotEl.classList.add('act-wave'); showSpeech('This is between us.', 4000); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+  () => { robotEl.classList.add('act-bounce'); showSpeech("I wasn't expecting that.", 4000); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+  () => { robotEl.classList.add('act-think'); showSpeech("Nobody's ever held on that long before.", 5000); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 6000); },
+  () => { robotEl.classList.add('act-sleep'); showSpeech('Zzz...', 1200); robotTimer = setTimeout(() => { robotClearActivity(); showSpeech("I wasn't sleeping.", 3000); robotNext(); }, 2200); },
+  () => { robotEl.classList.add('act-stretch'); showSpeech('Okay fine, you caught me.', 4000); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+];
+let lastSecretIndex = -1;
+function triggerSecretReaction() {
+  clearTimeout(robotTimer);
+  robotClearActivity();
+  let idx;
+  do { idx = Math.floor(Math.random() * SECRET_REACTIONS.length); } while (idx === lastSecretIndex && SECRET_REACTIONS.length > 1);
+  lastSecretIndex = idx;
+  SECRET_REACTIONS[idx]();
+}
+
+// Theme reaction cooldown
+let themeReactionCooldown = 0;
 
 function getFrequency() {
   return FREQUENCY_SETTINGS[localStorage.getItem('ps-robot-frequency') || 'medium'];
@@ -2487,6 +2523,8 @@ function robotInit() {
   let dragStartX = 0;
   let dragStartY = 0;
   let dragStartLeft = 0;
+  let holdTimer = null;
+  let secretFired = false;
 
   overlay?.addEventListener('mousedown', (e) => {
     const rect = robotEl.getBoundingClientRect();
@@ -2496,6 +2534,7 @@ function robotInit() {
 
     isDragging = true;
     hasDragged = false;
+    secretFired = false;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
     dragStartLeft = parseInt(robotEl.style.left) || 0;
@@ -2506,13 +2545,27 @@ function robotInit() {
     robotEl.style.bottom = '0px';
     robotEl.classList.add('dragging');
     e.preventDefault();
+
+    // Hold-to-secret: if held still for 2s without dragging, trigger a surprise
+    holdTimer = setTimeout(() => {
+      if (!hasDragged) {
+        secretFired = true;
+        isDragging = false;
+        robotEl.classList.remove('dragging');
+        triggerSecretReaction();
+      }
+    }, 2000);
   });
 
   document.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
     const deltaX = e.clientX - dragStartX;
     const deltaY = dragStartY - e.clientY; // up = positive
-    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) hasDragged = true;
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+      hasDragged = true;
+      // Cancel hold-to-secret once the user starts dragging
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    }
     const ow = overlay ? overlay.clientWidth : window.innerWidth;
     const newLeft = Math.max(4, Math.min(ow - 72, dragStartLeft + deltaX));
     robotEl.style.left = newLeft + 'px';
@@ -2529,9 +2582,11 @@ function robotInit() {
   ];
 
   document.addEventListener('mouseup', () => {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
     if (!isDragging) return;
     isDragging = false;
     robotEl.classList.remove('dragging');
+    touchInteraction();
     const currentBottom = parseInt(robotEl.style.bottom) || 0;
     if (currentBottom > 20) {
       // Falling! Wave arms and speak
@@ -2551,14 +2606,14 @@ function robotInit() {
       robotEl.style.bottom = '0px';
       setTimeout(() => { robotEl.style.transition = ''; }, 350);
       if (hasDragged) {
-        showSpeech(['New spot, nice.', 'I like it here.', 'Cozy.'][Math.floor(Math.random() * 3)], 2000);
+        showSpeech(['New spot, nice.', 'I like it here.', 'Cozy.', 'Good enough.'][Math.floor(Math.random() * 4)], 2000);
         setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
       } else {
         if (!robotOverride) robotNext();
       }
     } else {
       if (hasDragged) {
-        showSpeech(['New spot, nice.', 'I like it here.'][Math.floor(Math.random() * 2)], 2000);
+        showSpeech(['New spot, nice.', 'I like it here.', 'Fine by me.', 'This works.'][Math.floor(Math.random() * 4)], 2000);
         setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
       } else {
         if (!robotOverride) robotNext();
@@ -2571,7 +2626,8 @@ function robotInit() {
   let clickResetTimer = null;
 
   overlay?.addEventListener('click', (e) => {
-    if (hasDragged) { hasDragged = false; return; }
+    if (hasDragged || secretFired) { hasDragged = false; secretFired = false; return; }
+    touchInteraction();
     const rect = robotEl.getBoundingClientRect();
     const dx = e.clientX - (rect.left + rect.width / 2);
     const dy = e.clientY - (rect.top + rect.height / 2);
@@ -2590,7 +2646,9 @@ function robotInit() {
         () => { showSpeech('I\'m filing a complaint.', 4000); robotWalk(); },
         () => { showSpeech('Fine. You win.', 3000); robotWalk(); },
         () => { showSpeech('I need a vacation.', 4000); robotEl.classList.add('act-sleep'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 8000); },
-        () => { showSpeech('That\'s it, I\'m unionizing.', 4000); robotWalk(); },
+        () => { showSpeech('I know a union guy.', 4000); robotWalk(); },
+        () => { showSpeech('I\'ve accepted my fate.', 4000); robotEl.classList.add('act-stand'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+        () => { showSpeech('Fine. I\'m going to sleep.', 4000); robotEl.classList.add('act-sleep'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 10000); },
       ];
       reactions[Math.floor(Math.random() * reactions.length)]();
     } else if (clickCount >= 5) {
@@ -2598,10 +2656,11 @@ function robotInit() {
       robotClearActivity();
       // Animated tier
       const reactions = [
-        () => { showSpeech('Seriously?!', 3000); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+        () => { showSpeech('You\'re really going for it.', 3500); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
         () => { showSpeech('I\'m not a button, you know.', 4000); robotEl.classList.add('act-bounce'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
-        () => { showSpeech('Careful, I bite.', 3000); robotEl.classList.add('act-look'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
-        () => { showSpeech('Do you mind??', 3000); robotDoActivity(); },
+        () => { showSpeech('Careful. I bite.', 3000); robotEl.classList.add('act-look'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('Okay, sure. Just click away.', 3500); robotDoActivity(); },
+        () => { showSpeech('I\'m logging this.', 3500); robotEl.classList.add('act-type'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
       ];
       reactions[Math.floor(Math.random() * reactions.length)]();
     } else if (clickCount >= 3) {
@@ -2609,12 +2668,12 @@ function robotInit() {
       robotClearActivity();
       // Mild annoyance tier
       const reactions = [
-        () => { showSpeech('Ok ok, stop poking me!', 3000); robotEl.classList.add('act-bounce'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
-        () => { showSpeech('That tickles!', 3000); robotDoActivity(); },
-        () => { showSpeech('I\'m working here!', 3000); robotEl.classList.add('act-type'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
-        () => { showSpeech('Personal space, please!', 3000); robotWalk(); },
-        () => { showSpeech('Alright alright, dance break!', 4000); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
-        () => { showSpeech('You\'re persistent, I\'ll give you that.', 4000); robotDoActivity(); },
+        () => { showSpeech('Hey, that tickles.', 3000); robotEl.classList.add('act-bounce'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('I\'m working here.', 3000); robotEl.classList.add('act-type'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('Personal space, please.', 3000); robotWalk(); },
+        () => { showSpeech('Alright, dance break I guess.', 4000); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+        () => { showSpeech('Do you need something?', 3000); robotDoActivity(); },
+        () => { showSpeech('...', 2500); robotDoActivity(); },
       ];
       reactions[Math.floor(Math.random() * reactions.length)]();
     } else {
@@ -2644,6 +2703,55 @@ function robotInit() {
         robotNext();
       }, duration * 1000);
     }
+  });
+
+  // --- Environment Detection ---
+
+  // Online / offline
+  window.addEventListener('offline', () => {
+    if (robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') showSpeech('We lost the connection.', 4000);
+  });
+  window.addEventListener('online', () => {
+    if (robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') showSpeech('Back online.', 3000);
+  });
+
+  // Window focus / blur — comment on long absences
+  let blurTime = null;
+  window.addEventListener('blur', () => { blurTime = Date.now(); });
+  window.addEventListener('focus', () => {
+    if (!blurTime) return;
+    const away = Date.now() - blurTime;
+    blurTime = null;
+    touchInteraction(); // reset boredom clock when user returns
+    if (away > 5 * 60 * 1000 && robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') {
+      const msgs = ['Welcome back.', 'Oh, you\'re back.', 'Miss me?', 'There you are.', 'I waited.'];
+      setTimeout(() => showSpeech(msgs[Math.floor(Math.random() * msgs.length)], 3500), 600);
+    }
+  });
+
+  // Battery (where supported)
+  if ('getBattery' in navigator) {
+    navigator.getBattery().then(battery => {
+      let batteryAlertSent = false;
+      const checkBattery = () => {
+        if (!batteryAlertSent && battery.level < 0.2 && !battery.charging && robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') {
+          batteryAlertSent = true;
+          showSpeech('Low battery. Save your work.', 5000);
+        }
+      };
+      checkBattery();
+      battery.addEventListener('levelchange', checkBattery);
+      battery.addEventListener('chargingchange', () => { if (battery.charging) batteryAlertSent = false; });
+    }).catch(() => {});
+  }
+
+  // Theme changes
+  window.addEventListener('theme-changed', () => {
+    if (!robotEl || localStorage.getItem('ps-robot-enabled') === 'false') return;
+    if (Date.now() - themeReactionCooldown < 30000) return;
+    themeReactionCooldown = Date.now();
+    const msgs = ['New look.', 'Nice theme.', 'Bold choice.', 'I like it.', 'Stylish.'];
+    setTimeout(() => showSpeech(msgs[Math.floor(Math.random() * msgs.length)], 3000), 500);
   });
 
   // Just stand still on startup — the idle hover animation handles the rest
@@ -2728,11 +2836,41 @@ function robotDoActivity() {
   if (robotOverride) return;
   robotClearActivity();
 
-  // Pick a random activity (avoid repeating the last one)
+  const idle = idleMs();
+  const boredLevel = idle > 12 * 60000 ? 3 : idle > 8 * 60000 ? 2 : idle > 3 * 60000 ? 1 : 0;
+
+  // Boredom level 3 (12+ min idle): force sleep
+  if (boredLevel >= 3) {
+    const sleepAct = ACTIVITIES.find(a => a.name === 'sleep');
+    robotEl.classList.add(sleepAct.cls);
+    showSpeech('Zzz...', 5000);
+    const dur = sleepAct.duration[0] + Math.random() * (sleepAct.duration[1] - sleepAct.duration[0]);
+    robotTimer = setTimeout(() => {
+      robotClearActivity();
+      robotNext();
+    }, dur * 1000);
+    return;
+  }
+
+  // Boredom level 2 (8+ min idle): 40% chance to wander with quip
+  if (boredLevel >= 2 && Math.random() < 0.4) {
+    showSpeech(BOREDOM_WALK_QUIPS[Math.floor(Math.random() * BOREDOM_WALK_QUIPS.length)], 2500);
+    setTimeout(() => robotWalk(), 500);
+    return;
+  }
+
+  // Pick activity — bias toward boring ones when idle
   let idx;
-  do {
-    idx = Math.floor(Math.random() * ACTIVITIES.length);
-  } while (idx === lastActivityIndex && ACTIVITIES.length > 1);
+  const boringNames = ['stand', 'look', 'nod', 'think'];
+  if (boredLevel >= 1 && Math.random() < 0.65) {
+    const boringActs = ACTIVITIES.filter(a => boringNames.includes(a.name));
+    const candidate = boringActs[Math.floor(Math.random() * boringActs.length)];
+    idx = ACTIVITIES.indexOf(candidate);
+  } else {
+    do {
+      idx = Math.floor(Math.random() * ACTIVITIES.length);
+    } while (idx === lastActivityIndex && ACTIVITIES.length > 1);
+  }
   lastActivityIndex = idx;
 
   const act = ACTIVITIES[idx];
@@ -2745,11 +2883,18 @@ function robotDoActivity() {
     showSpeech('Zzz...');
   }
 
+  // Occasional boredom quip while doing a boring activity
+  if (boredLevel >= 1 && boringNames.includes(act.name) && Math.random() < 0.3) {
+    const dur = act.duration[0] + Math.random() * (act.duration[1] - act.duration[0]);
+    setTimeout(() => {
+      if (!robotOverride) showSpeech(BOREDOM_IDLE_QUIPS[Math.floor(Math.random() * BOREDOM_IDLE_QUIPS.length)], 3000);
+    }, (dur * 0.5) * 1000);
+  }
+
   // Stay in this activity for its duration, then move on
   const dur = act.duration[0] + Math.random() * (act.duration[1] - act.duration[0]);
   robotTimer = setTimeout(() => {
     robotClearActivity();
-    // 50/50: walk somewhere or do another activity
     robotNext();
   }, dur * 1000);
 }
@@ -2927,13 +3072,36 @@ async function showWelcomeMessage() {
     } catch {}
   }
 
+  // Time and day awareness
+  const hour = new Date().getHours();
+  const day = new Date().getDay();
+  let timeGreeting = null;
+  if (hour >= 0 && hour < 5) {
+    timeGreeting = ['Working this late? Respect.', 'Night owl mode.', 'Still at it.'][Math.floor(Math.random() * 3)];
+  } else if (hour < 9) {
+    timeGreeting = ['Good morning.', 'Early start.', 'Rise and code.'][Math.floor(Math.random() * 3)];
+  } else if (hour >= 20) {
+    timeGreeting = ['Burning the midnight oil.', 'Late session.', 'Still going.'][Math.floor(Math.random() * 3)];
+  } else if (hour >= 17) {
+    timeGreeting = ['Evening shift.', 'Almost done for the day.'][Math.floor(Math.random() * 2)];
+  }
+
+  let dayGreeting = null;
+  if (day === 1) dayGreeting = 'Monday. Let\'s get it.';
+  else if (day === 5) dayGreeting = 'Friday. Finish strong.';
+  else if (day === 0 || day === 6) dayGreeting = 'Weekend dev? Dedication.';
+
   // Build the welcome message
-  if (hint) {
+  if (timeGreeting) {
+    showSpeech(timeGreeting, 4000);
+  } else if (dayGreeting) {
+    showSpeech(dayGreeting, 4000);
+  } else if (hint) {
     showSpeech(hint, 6000);
   } else if (projectName && projectName !== '~') {
-    showSpeech(`Welcome back to ${projectName}!`, 4000);
+    showSpeech(`Welcome back to ${projectName}.`, 4000);
   } else {
-    const greetings = ['Ready to code!', 'Let\'s build something.', 'Standing by.', 'At your service.'];
+    const greetings = ['Ready to code.', 'Let\'s build something.', 'Standing by.', 'At your service.'];
     showSpeech(greetings[Math.floor(Math.random() * greetings.length)], 4000);
   }
 }

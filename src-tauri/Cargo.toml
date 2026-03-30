@@ -1,6 +1,6 @@
 [package]
 name = "pane-street"
-version = "0.4.11"
+version = "0.4.16"
 edition = "2021"
 
 [lib]

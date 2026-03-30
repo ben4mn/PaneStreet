@@ -1298,6 +1298,7 @@ export function applyTheme(themeData) {
   if (themeData.terminal) {
     window.dispatchEvent(new CustomEvent('theme-terminal-changed', { detail: themeData.terminal }));
   }
+  window.dispatchEvent(new CustomEvent('theme-changed', { detail: themeData }));
 }
 
 export function loadSavedTheme() {

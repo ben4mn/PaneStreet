@@ -116,10 +116,12 @@
               <path d="M15.5 16 Q18 18 20.5 16" stroke="var(--accent)" stroke-width="1" fill="none" stroke-linecap="round"/>
             </g>
           </g>
-          <!-- Body (outline only, minimal) -->
-          <rect x="12" y="22" width="12" height="7" rx="3" fill="none" stroke="var(--text-muted)" stroke-width="0.7" opacity="0.5"/>
-          <!-- Chest light -->
-          <circle class="robot-chest-glow" cx="18" cy="25.5" r="1.2" fill="var(--accent)" opacity="0.6"/>
+          <!-- Body (solid with depth tinting) -->
+          <rect x="12" y="22" width="12" height="7" rx="3" fill="var(--text-secondary)"/>
+          <!-- Body top highlight -->
+          <rect x="12.5" y="22.5" width="11" height="3" rx="2" fill="#fff" opacity="0.09"/>
+          <!-- Body bottom shadow -->
+          <rect x="12" y="26" width="12" height="3" rx="1.5" fill="#000" opacity="0.1"/>
           <!-- Arms (rounded, white) -->
           <rect class="robot-arm-l" x="6.5" y="22.5" width="4.5" height="5" rx="2.2" fill="var(--text-secondary)"/>
           <rect class="robot-arm-r" x="25" y="22.5" width="4.5" height="5" rx="2.2" fill="var(--text-secondary)"/>

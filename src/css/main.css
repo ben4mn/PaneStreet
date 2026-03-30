@@ -1142,16 +1142,11 @@ html, body {
 
 /* --- Always-on ambient (very subtle, slow) --- */
 .robot-eyes { animation: robot-blink 8s ease-in-out infinite; }
-.robot-chest-glow { animation: robot-glow 6s ease-in-out infinite; }
 .robot-antenna { animation: robot-antenna 4s ease-in-out infinite; transform-origin: 18px 6.5px; }
 
 @keyframes robot-blink {
   0%, 46%, 49%, 100% { opacity: 1; }
   47.5% { opacity: 0.1; }
-}
-@keyframes robot-glow {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
 }
 @keyframes robot-antenna {
   0%, 100% { transform: rotate(0deg); }
@@ -1314,7 +1309,6 @@ html, body {
   animation: sleep-antenna 4s ease-in-out infinite;
   transform-origin: 18px 6.5px;
 }
-#footer-mascot.act-sleep .robot-chest-glow { animation-duration: 6s; }
 #footer-mascot.act-sleep .robot-shadow {
   animation: sleep-shadow 4s ease-in-out infinite;
 }
@@ -1563,9 +1557,6 @@ html, body {
   animation: code-tap-r 0.3s ease-in-out infinite;
   transform-origin: 21.5px 21px;
 }
-#footer-mascot.act-code .robot-chest-glow {
-  animation: code-glow 0.5s ease-in-out infinite;
-}
 #footer-mascot.act-code .robot-eyes {
   animation: code-focus 4s ease-in-out infinite;
 }
@@ -1577,10 +1568,6 @@ html, body {
   0%, 40% { transform: rotate(-5deg) translateY(0); }
   70% { transform: rotate(-8deg) translateY(-2px); }
   100% { transform: rotate(-5deg) translateY(0); }
-}
-@keyframes code-glow {
-  0%, 100% { opacity: 0.8; }
-  50% { opacity: 1; fill: var(--accent-light); }
 }
 @keyframes code-focus {
   0%, 90%, 100% { transform: translateY(0.5px); }
@@ -1620,9 +1607,6 @@ html, body {
 }
 
 /* --- Status overrides (applied by JS alongside activity) --- */
-#footer-mascot.working .robot-chest-glow {
-  animation: robot-glow 0.8s ease-in-out infinite;
-}
 #footer-mascot.exited {
   opacity: 0.25;
   filter: grayscale(1);
@@ -1673,13 +1657,14 @@ html, body {
   transform: translateX(-50%);
   background: var(--bg-card);
   color: var(--text-primary);
-  font-size: 10px;
+  font-size: 13px;
+  line-height: 1.4;
   font-family: var(--font-ui);
-  padding: 4px 10px;
+  padding: 6px 12px;
   border-radius: 6px;
   white-space: normal;
   word-wrap: break-word;
-  max-width: 320px;
+  max-width: 360px;
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;
