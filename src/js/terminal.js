@@ -55,7 +55,41 @@ export class TerminalSession {
 
     this.fitAddon = new FitAddon();
     this.term.loadAddon(this.fitAddon);
-    this.term.loadAddon(new WebLinksAddon());
+    // Web links: Cmd+click opens URLs via Tauri opener
+    this.term.loadAddon(new WebLinksAddon((event, url) => {
+      if (event.metaKey || event.ctrlKey) {
+        try { window.__TAURI__.opener.openUrl(url); } catch (err) { console.warn('Failed to open URL:', err); }
+      }
+    }));
+
+    // File path links: Cmd+click opens local files/directories
+    const filePathRegex = /(?:^|\s)((?:\/[\w.@-]+)+(?:\.[\w]+)?(?::(\d+)(?::(\d+))?)?)/g;
+    this.term.registerLinkProvider({
+      provideLinks: (lineNumber, callback) => {
+        const line = this.term.buffer.active.getLine(lineNumber - 1);
+        if (!line) return callback([]);
+        const text = line.translateToString(true);
+        const links = [];
+        let match;
+        const re = new RegExp(filePathRegex.source, 'g');
+        while ((match = re.exec(text)) !== null) {
+          const fullMatch = match[1];
+          const startX = match.index + (match[0].length - match[1].length) + 1;
+          links.push({
+            range: { start: { x: startX, y: lineNumber }, end: { x: startX + fullMatch.length - 1, y: lineNumber } },
+            text: fullMatch,
+            activate: (event, linkText) => {
+              if (event.metaKey || event.ctrlKey) {
+                // Extract file path (strip :line:col)
+                const filePath = linkText.replace(/:\d+(:\d+)?$/, '');
+                try { window.__TAURI__.opener.openPath(filePath); } catch (err) { console.warn('Failed to open path:', err); }
+              }
+            },
+          });
+        }
+        callback(links);
+      },
+    });
 
     // Kitty keyboard protocol support — Claude Code queries this on startup
     // to decide whether Shift+Enter (and other modified keys) are supported.

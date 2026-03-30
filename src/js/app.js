@@ -6,6 +6,8 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
 const sessions = [];
+const closedSessionStack = []; // For Cmd+Z undo-close
+const MAX_CLOSED_SESSIONS = 10;
 let focusedIndex = 0;
 let maximizedIndex = null;
 let contextMenu = null;
@@ -1082,6 +1084,18 @@ async function removeSession(index) {
 
   const session = sessions[index];
 
+  // Save session info for undo-close (Cmd+Z)
+  try {
+    const scrollback = session.terminal.getScrollback(500);
+    closedSessionStack.push({
+      name: session.name,
+      cwd: session.cwd,
+      scrollback,
+      closedAt: Date.now(),
+    });
+    if (closedSessionStack.length > MAX_CLOSED_SESSIONS) closedSessionStack.shift();
+  } catch {}
+
   // Handle maximize state
   if (maximizedIndex === index) {
     maximizedIndex = null;
@@ -1114,6 +1128,21 @@ async function removeSession(index) {
     }
     requestAnimationFrame(() => setFocus(target));
   }
+}
+
+async function reopenLastClosed() {
+  if (closedSessionStack.length === 0) return;
+  const closed = closedSessionStack.pop();
+  await createSession(closed.cwd, closed.scrollback);
+  // Rename the new session to the old name
+  const newSession = sessions[sessions.length - 1];
+  if (newSession && closed.name) {
+    newSession.name = closed.name;
+    newSession.pane.querySelector('.pane-title').textContent = closed.name;
+    rebuildSidebar();
+    updateFooterPills();
+  }
+  setFocus(sessions.length - 1);
 }
 
 // --- Minimize / Restore / Maximize ---
@@ -1962,6 +1991,7 @@ function setupShortcuts() {
     'file-viewer':    { key: 'e',       meta: true,  shift: true  },
     'new-terminal':   { key: 'n',       meta: true,  shift: false },
     'close-terminal': { key: 'w',       meta: true,  shift: false },
+    'reopen-closed':  { key: 'z',       meta: true,  shift: true  },
     'maximize':       { key: 'Enter',   meta: true,  shift: true  },
     'minimize':       { key: 'm',       meta: true,  shift: false },
     'restore-all':    { key: 'm',       meta: true,  shift: true  },
@@ -1983,6 +2013,7 @@ function setupShortcuts() {
     'file-viewer':    () => { toggleFileViewer(sessions[focusedIndex]?.cwd); return true; },
     'new-terminal':   () => { createSession(); return true; },
     'close-terminal': () => { if (sessions.length > 0) removeSession(focusedIndex); return true; },
+    'reopen-closed':  () => { reopenLastClosed(); return true; },
     'maximize':       () => { if (sessions.length > 0) toggleMaximize(focusedIndex); return true; },
     'minimize':       () => { if (sessions.length > 0) minimizeSession(focusedIndex); return true; },
     'restore-all':    () => { restoreAllSessions(); return true; },
