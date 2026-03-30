@@ -693,10 +693,43 @@ async function renderSettingsTab(tab) {
         </div>
       </div>
 
-      <div style="margin-top:20px">
+      <div class="settings-group" style="margin-top:12px">
+        <div class="setting-section-title">What's New</div>
+        <div id="changelog-content" style="margin-top:8px">
+          <div class="setting-description" style="color:var(--text-muted)">Loading release notes...</div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px">
         <div class="setting-description">Pane Street — Multi-session Claude Code terminal manager</div>
       </div>
     `;
+
+    // Load changelog from GitHub releases
+    (async () => {
+      const el = container.querySelector('#changelog-content');
+      if (!el) return;
+      try {
+        const res = await fetch('https://api.github.com/repos/ben4mn/PaneStreet/releases?per_page=5');
+        if (!res.ok) throw new Error('fetch failed');
+        const releases = await res.json();
+        if (!releases.length) { el.innerHTML = '<div class="setting-description" style="color:var(--text-muted)">No releases found.</div>'; return; }
+        el.innerHTML = releases.map(r => {
+          const date = new Date(r.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+          const body = r.body ? formatChangelogBody(r.body) : '<span style="color:var(--text-muted)">No notes.</span>';
+          return `
+            <div class="changelog-entry">
+              <div class="changelog-header">
+                <span class="changelog-version">${r.tag_name}</span>
+                <span class="changelog-date">${date}</span>
+              </div>
+              <div class="changelog-body">${body}</div>
+            </div>`;
+        }).join('');
+      } catch {
+        el.innerHTML = '<div class="setting-description" style="color:var(--text-muted)">Could not load release notes.</div>';
+      }
+    })();
 
     container.querySelector('#check-update-btn').addEventListener('click', async () => {
       const msgEl = container.querySelector('#update-status-msg');
@@ -823,6 +856,24 @@ async function renderSettingsTab(tab) {
 }
 
 // --- Keyboard Shortcuts ---
+
+function formatChangelogBody(md) {
+  // Convert markdown bullet lists and bold to simple HTML, sanitize the rest
+  return md
+    .split('\n')
+    .filter(l => l.trim())
+    .map(l => {
+      const t = l.trim();
+      if (/^#{1,3}\s/.test(t)) return ''; // skip sub-headers (already have version as header)
+      if (/^[-*]\s/.test(t)) {
+        const text = t.slice(2).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        return `<div class="changelog-item">• ${text}</div>`;
+      }
+      return `<div class="changelog-item" style="color:var(--text-muted)">${t}</div>`;
+    })
+    .filter(Boolean)
+    .join('');
+}
 
 const DEFAULT_SHORTCUTS = [
   { id: 'close-panel',      label: 'Close panel / file viewer',    key: 'Escape',  meta: false, shift: false, category: 'Navigation' },

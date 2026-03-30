@@ -2366,6 +2366,34 @@ html, body {
   padding-bottom: 4px;
 }
 
+/* Changelog */
+.changelog-entry {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+}
+.changelog-entry:last-child { border-bottom: none; }
+.changelog-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.changelog-version {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--accent);
+}
+.changelog-date {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+.changelog-body { display: flex; flex-direction: column; gap: 3px; }
+.changelog-item {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
 /* Inline row (label left, control right) */
 .setting-row-inline {
   display: flex;
