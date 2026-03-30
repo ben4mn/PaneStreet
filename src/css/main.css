@@ -1130,7 +1130,7 @@ html, body {
   bottom: 0;
   left: 4px;
   width: 68px;
-  height: 68px;
+  height: 72px;
   cursor: pointer;
   transition: left 10s linear;
   overflow: visible;
@@ -1143,7 +1143,7 @@ html, body {
 /* --- Always-on ambient (very subtle, slow) --- */
 .robot-eyes { animation: robot-blink 8s ease-in-out infinite; }
 .robot-chest-glow { animation: robot-glow 6s ease-in-out infinite; }
-.robot-antenna { animation: robot-antenna 6s ease-in-out infinite; transform-origin: 14px 5px; }
+.robot-antenna { animation: robot-antenna 4s ease-in-out infinite; transform-origin: 18px 6.5px; }
 
 @keyframes robot-blink {
   0%, 46%, 49%, 100% { opacity: 1; }
@@ -1185,6 +1185,14 @@ html, body {
 }
 #footer-mascot.walking .robot-shadow {
   animation: walk-shadow 0.5s ease-in-out infinite;
+}
+#footer-mascot.walking .robot-antenna {
+  animation: walk-antenna-bounce 0.25s ease-in-out infinite alternate;
+  transform-origin: 18px 6.5px;
+}
+@keyframes walk-antenna-bounce {
+  0% { transform: rotate(-6deg); }
+  100% { transform: rotate(6deg); }
 }
 
 /* Body: gentle up-down bob, twice per cycle (once per step) */
@@ -1265,7 +1273,7 @@ html, body {
 }
 #footer-mascot.act-look .robot-head {
   animation: look-head 3s ease-in-out infinite;
-  transform-origin: 14px 10px;
+  transform-origin: 18px 13.5px;
 }
 @keyframes look-around {
   0%, 100% { transform: translateX(0); }
@@ -1304,7 +1312,7 @@ html, body {
 }
 #footer-mascot.act-sleep .robot-antenna {
   animation: sleep-antenna 4s ease-in-out infinite;
-  transform-origin: 14px 5px;
+  transform-origin: 18px 6.5px;
 }
 #footer-mascot.act-sleep .robot-chest-glow { animation-duration: 6s; }
 #footer-mascot.act-sleep .robot-shadow {
@@ -1373,7 +1381,7 @@ html, body {
 }
 #footer-mascot.act-think .robot-antenna {
   animation: think-antenna 1.5s ease-in-out infinite;
-  transform-origin: 14px 5px;
+  transform-origin: 18px 6.5px;
 }
 #footer-mascot.act-think .robot-antenna circle {
   animation: think-antenna-tip 1.5s ease-in-out infinite;
@@ -1527,7 +1535,7 @@ html, body {
 }
 #footer-mascot.act-phone .robot-head {
   animation: phone-tilt 1.8s ease-in-out infinite;
-  transform-origin: 14px 10px;
+  transform-origin: 18px 13.5px;
 }
 @keyframes phone-nod {
   0%, 100% { transform: rotate(2deg); }
@@ -1624,6 +1632,34 @@ html, body {
   cursor: grabbing;
   transform: scale(1.08);
   transition: transform 0.15s ease !important;
+}
+#footer-mascot.act-falling .robot-arm-l {
+  animation: falling-arm-l 0.2s ease-in-out infinite alternate;
+}
+#footer-mascot.act-falling .robot-arm-r {
+  animation: falling-arm-r 0.2s ease-in-out infinite alternate;
+}
+#footer-mascot.act-falling .robot-antenna {
+  animation: falling-antenna 0.15s ease-in-out infinite alternate;
+}
+#footer-mascot.act-falling .robot-body {
+  animation: falling-wobble 0.25s ease-in-out infinite alternate;
+}
+@keyframes falling-arm-l {
+  0% { transform: rotate(-35deg); transform-origin: right top; }
+  100% { transform: rotate(25deg); transform-origin: right top; }
+}
+@keyframes falling-arm-r {
+  0% { transform: rotate(35deg); transform-origin: left top; }
+  100% { transform: rotate(-25deg); transform-origin: left top; }
+}
+@keyframes falling-antenna {
+  0% { transform: rotate(-15deg); transform-origin: center bottom; }
+  100% { transform: rotate(15deg); transform-origin: center bottom; }
+}
+@keyframes falling-wobble {
+  0% { transform: rotate(-4deg); }
+  100% { transform: rotate(4deg); }
 }
 
 /* Speech bubble */

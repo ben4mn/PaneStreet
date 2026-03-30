@@ -1087,10 +1087,14 @@ async function removeSession(index) {
   // Save session info for undo-close (Cmd+Z)
   try {
     const scrollback = session.terminal.getScrollback(500);
+    // Detect if this was a Claude Code session
+    const cleanScrollback = scrollback.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+    const wasClaude = cleanScrollback.includes('Claude Code') || cleanScrollback.includes('Total cost:') || cleanScrollback.includes('claude-opus') || cleanScrollback.includes('claude-sonnet');
     closedSessionStack.push({
       name: session.name,
       cwd: session.cwd,
       scrollback,
+      wasClaude,
       closedAt: Date.now(),
     });
     if (closedSessionStack.length > MAX_CLOSED_SESSIONS) closedSessionStack.shift();
@@ -1143,6 +1147,19 @@ async function reopenLastClosed() {
     updateFooterPills();
   }
   setFocus(sessions.length - 1);
+  // Auto-resume Claude Code session with conversation name
+  if (closed.wasClaude && newSession) {
+    setTimeout(() => {
+      const encoder = new TextEncoder();
+      // Use session name as conversation name (set by /rename in Claude Code)
+      const isDefaultName = /^Terminal \d+$/.test(closed.name);
+      const cmd = isDefaultName ? 'claude --resume\n' : `claude --resume "${closed.name}"\n`;
+      invoke('write_to_pty', {
+        sessionId: newSession.id,
+        data: Array.from(encoder.encode(cmd)),
+      });
+    }, 500);
+  }
 }
 
 // --- Minimize / Restore / Maximize ---
@@ -2532,23 +2549,48 @@ function robotInit() {
     robotEl.style.bottom = liftY + 'px';
   });
 
+  const DROP_QUOTES = [
+    'AAAAAH!', 'Not again!', 'I can fly! ...nope.', 'Mayday!',
+    'Wheeeee!', 'Put me down!', 'I regret everything!', 'Gravity wins again.',
+    'My antenna!', 'Told you I\'d land it.', 'Stuck the landing!', '10/10 landing.',
+    'That was fun!', 'Do NOT do that again.', 'I think I left my stomach up there.',
+  ];
+
   document.addEventListener('mouseup', () => {
     if (!isDragging) return;
     isDragging = false;
     robotEl.classList.remove('dragging');
-    // Drop animation — fall back to the bottom
     const currentBottom = parseInt(robotEl.style.bottom) || 0;
-    if (currentBottom > 0) {
-      // Bounce-drop: fast fall with a little bounce
-      robotEl.style.transition = 'bottom 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+    if (currentBottom > 20) {
+      // Falling! Wave arms and speak
+      robotEl.classList.add('act-falling');
+      const fallDuration = Math.min(1.2, 0.4 + currentBottom * 0.003);
+      robotEl.style.transition = `bottom ${fallDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
+      robotEl.style.bottom = '0px';
+      showSpeech(DROP_QUOTES[Math.floor(Math.random() * DROP_QUOTES.length)], 2500);
+      setTimeout(() => {
+        robotEl.style.transition = '';
+        robotEl.classList.remove('act-falling');
+        robotEl.classList.add('act-bounce');
+        setTimeout(() => { robotEl.classList.remove('act-bounce'); if (!robotOverride) robotNext(); }, 600);
+      }, fallDuration * 1000);
+    } else if (currentBottom > 0) {
+      robotEl.style.transition = 'bottom 0.3s ease-out';
       robotEl.style.bottom = '0px';
       setTimeout(() => { robotEl.style.transition = ''; }, 350);
-    }
-    if (hasDragged) {
-      showSpeech(['Whoa!', 'Easy there!', 'New spot, nice.', 'I like it here.'][Math.floor(Math.random() * 4)], 2000);
-      setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
+      if (hasDragged) {
+        showSpeech(['New spot, nice.', 'I like it here.', 'Cozy.'][Math.floor(Math.random() * 3)], 2000);
+        setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
+      } else {
+        if (!robotOverride) robotNext();
+      }
     } else {
-      if (!robotOverride) robotNext();
+      if (hasDragged) {
+        showSpeech(['New spot, nice.', 'I like it here.'][Math.floor(Math.random() * 2)], 2000);
+        setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
+      } else {
+        if (!robotOverride) robotNext();
+      }
     }
   });
 
