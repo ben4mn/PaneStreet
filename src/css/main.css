@@ -1634,32 +1634,35 @@ html, body {
   transition: transform 0.15s ease !important;
 }
 #footer-mascot.act-falling .robot-arm-l {
-  animation: falling-arm-l 0.2s ease-in-out infinite alternate;
+  animation: falling-arm-l 0.45s ease-in-out infinite alternate;
+  transform-origin: 11px 23px;
 }
 #footer-mascot.act-falling .robot-arm-r {
-  animation: falling-arm-r 0.2s ease-in-out infinite alternate;
+  animation: falling-arm-r 0.45s ease-in-out infinite alternate;
+  transform-origin: 25px 23px;
 }
 #footer-mascot.act-falling .robot-antenna {
-  animation: falling-antenna 0.15s ease-in-out infinite alternate;
+  animation: falling-antenna 0.4s ease-in-out infinite alternate;
+  transform-origin: 18px 6.5px;
 }
 #footer-mascot.act-falling .robot-body {
-  animation: falling-wobble 0.25s ease-in-out infinite alternate;
+  animation: falling-wobble 0.5s ease-in-out infinite alternate;
 }
 @keyframes falling-arm-l {
-  0% { transform: rotate(-35deg); transform-origin: right top; }
-  100% { transform: rotate(25deg); transform-origin: right top; }
+  0% { transform: rotate(-10deg); }
+  100% { transform: rotate(8deg); }
 }
 @keyframes falling-arm-r {
-  0% { transform: rotate(35deg); transform-origin: left top; }
-  100% { transform: rotate(-25deg); transform-origin: left top; }
+  0% { transform: rotate(10deg); }
+  100% { transform: rotate(-8deg); }
 }
 @keyframes falling-antenna {
-  0% { transform: rotate(-15deg); transform-origin: center bottom; }
-  100% { transform: rotate(15deg); transform-origin: center bottom; }
+  0% { transform: rotate(-8deg); }
+  100% { transform: rotate(8deg); }
 }
 @keyframes falling-wobble {
-  0% { transform: rotate(-4deg); }
-  100% { transform: rotate(4deg); }
+  0% { transform: rotate(-2deg); }
+  100% { transform: rotate(2deg); }
 }
 
 /* Speech bubble */

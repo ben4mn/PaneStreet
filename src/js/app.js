@@ -2564,8 +2564,8 @@ function robotInit() {
     if (currentBottom > 20) {
       // Falling! Wave arms and speak
       robotEl.classList.add('act-falling');
-      const fallDuration = Math.min(1.2, 0.4 + currentBottom * 0.003);
-      robotEl.style.transition = `bottom ${fallDuration}s cubic-bezier(0.22, 1, 0.36, 1)`;
+      const fallDuration = Math.min(2.2, 0.9 + currentBottom * 0.006);
+      robotEl.style.transition = `bottom ${fallDuration}s cubic-bezier(0.33, 0, 0.66, 1)`;
       robotEl.style.bottom = '0px';
       showSpeech(DROP_QUOTES[Math.floor(Math.random() * DROP_QUOTES.length)], 2500);
       setTimeout(() => {
