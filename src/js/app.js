@@ -2203,58 +2203,36 @@ const STATUS_COLORS = {
 };
 
 async function maybeNotify(session, status) {
-  console.log('[notify]', status, 'windowFocused:', windowFocused);
   const idx = sessions.indexOf(session);
   const isActiveTab = idx >= 0 && idx === focusedIndex;
-  // Claude-specific events should notify even when window is focused (if different tab)
-  const claudeEvents = ['WaitingForInput', 'NeedsPermission', 'ClaudeNeedsInput', 'ClaudeFinished'];
-  const isClaudeEvent = claudeEvents.includes(status);
 
-  // Mascot relay for in-app, different tab
+  // Mascot speech relay for in-app, different tab (Claude events only)
   if (windowFocused && !isActiveTab && localStorage.getItem('ps-robot-enabled') !== 'false') {
     const friendlyStatus = {
-      WaitingForInput: 'needs attention',
-      NeedsPermission: 'needs approval',
       ClaudeNeedsInput: 'needs your input',
-      Error: 'has a problem',
       ClaudeFinished: 'Claude is done',
     }[status];
-    if (friendlyStatus) showSpeech(`${session.name} ${friendlyStatus}`, 4000);
+    if (friendlyStatus) showSpeech(`${session.name}: ${friendlyStatus}`, 4000);
   }
 
-  // Skip native notifications if this is the active tab and window is focused
+  // Only send native push notifications for Claude-specific events
+  if (!['ClaudeNeedsInput', 'ClaudeFinished'].includes(status)) return;
+
+  // Skip if this is the active tab and window is focused
   if (isActiveTab && windowFocused) return;
-  // Skip non-Claude events when window is focused (only mascot relay above)
-  if (windowFocused && !isClaudeEvent) return;
 
   if (localStorage.getItem('ps-notifications') === 'false') return;
 
-  // Check per-status toggles
+  // Per-status opt-out toggles
   const statusToggleMap = {
-    WaitingForInput: 'ps-notify-waiting',
-    NeedsPermission: 'ps-notify-permission',
     ClaudeNeedsInput: 'ps-notify-claude-input',
-    Exited: 'ps-notify-exited',
-    CommandCompleted: 'ps-notify-completed',
-    Error: 'ps-notify-error',
     ClaudeFinished: 'ps-notify-claude-finished',
   };
   const toggleKey = statusToggleMap[status];
-  if (!toggleKey) return;
-  // CommandCompleted defaults to off (opt-in); others default to on
-  if (status === 'CommandCompleted') {
-    if (localStorage.getItem(toggleKey) !== 'true') return;
-  } else {
-    if (localStorage.getItem(toggleKey) === 'false') return;
-  }
+  if (toggleKey && localStorage.getItem(toggleKey) === 'false') return;
 
   const messages = {
-    WaitingForInput: 'needs your attention',
-    NeedsPermission: 'is asking for your approval',
     ClaudeNeedsInput: 'Claude needs your input',
-    Exited: 'has finished',
-    CommandCompleted: 'finished running a command',
-    Error: 'ran into a problem',
     ClaudeFinished: 'Claude finished working',
   };
   const msg = messages[status];
@@ -2312,11 +2290,8 @@ function setupStatusListener() {
       session.terminal.applySettings(pendingTerminalSettings);
     }
 
-    // Notification ring on unfocused panes that need attention
+    // Visual ring on unfocused panes (all attention states — non-intrusive)
     const needsAttention = ['WaitingForInput', 'NeedsPermission', 'ClaudeNeedsInput', 'Exited', 'Error', 'ClaudeFinished'].includes(status);
-    const commandCompleted = (previousStatus === 'Working' && status === 'Idle');
-    const shouldNotify = needsAttention || commandCompleted;
-
     if (needsAttention && idx !== focusedIndex) {
       session.pane.classList.add('notify-ring');
       const card = document.querySelectorAll('.session-card')[idx];
@@ -2327,14 +2302,11 @@ function setupStatusListener() {
       if (card) card.classList.remove('notify-badge');
     }
 
-    // Add to notification history and send push notification
-    if (shouldNotify) {
-      const notifStatus = commandCompleted ? 'CommandCompleted' : status;
-      const completedEnabled = notifStatus !== 'CommandCompleted' || localStorage.getItem('ps-notify-completed') === 'true';
-      if (completedEnabled) {
-        addNotification(session.name, notifStatus, idx);
-        maybeNotify(session, notifStatus);
-      }
+    // Native push notifications + history: Claude events only
+    const isClaudeEvent = ['ClaudeNeedsInput', 'ClaudeFinished'].includes(status);
+    if (isClaudeEvent) {
+      addNotification(session.name, status, idx);
+      maybeNotify(session, status);
     }
 
     triggerMascotBounce();

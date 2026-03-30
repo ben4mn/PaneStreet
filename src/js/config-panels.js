@@ -135,9 +135,6 @@ function checkSettingsDirty() {
     gitShowDirty: String(container.querySelector('#pref-git-dirty')?.checked ?? true),
     gitPoll: container.querySelector('#pref-git-poll')?.value || '5',
     notifications: String(container.querySelector('#pref-notifications')?.checked ?? true),
-    notifyWaiting: String(container.querySelector('#pref-notify-waiting')?.checked ?? true),
-    notifyPermission: String(container.querySelector('#pref-notify-permission')?.checked ?? true),
-    notifyExited: String(container.querySelector('#pref-notify-exited')?.checked ?? true),
     notifySound: String(container.querySelector('#pref-notify-sound')?.checked ?? true),
     robotEnabled: String(container.querySelector('#pref-robot')?.checked ?? true),
     robotFrequency: container.querySelector('#pref-robot-frequency')?.value || 'medium',
@@ -240,11 +237,6 @@ async function renderSettingsTab(tab) {
     const gitShowDirty = localStorage.getItem('ps-git-show-dirty') !== 'false';
     const gitPollInterval = localStorage.getItem('ps-git-poll') || '5';
     const notificationsEnabled = localStorage.getItem('ps-notifications') !== 'false';
-    const notifyOnWaiting = localStorage.getItem('ps-notify-waiting') !== 'false';
-    const notifyOnPermission = localStorage.getItem('ps-notify-permission') !== 'false';
-    const notifyOnExited = localStorage.getItem('ps-notify-exited') !== 'false';
-    const notifyOnCompleted = localStorage.getItem('ps-notify-completed') === 'true';
-    const notifyOnError = localStorage.getItem('ps-notify-error') !== 'false';
     const notifyOnClaudeInput = localStorage.getItem('ps-notify-claude-input') !== 'false';
     const notifyOnClaudeFinished = localStorage.getItem('ps-notify-claude-finished') !== 'false';
     const notifySound = localStorage.getItem('ps-notify-sound') !== 'false';
@@ -353,46 +345,6 @@ async function renderSettingsTab(tab) {
 
         <div class="setting-row-stacked notify-sub-settings" ${notificationsEnabled ? '' : 'style="opacity:0.4;pointer-events:none"'}>
           <div class="setting-description" style="margin-bottom:8px;font-weight:500;color:var(--text-primary)">Notify me when...</div>
-
-          <div class="setting-row-inline" style="padding:4px 0">
-            <div class="setting-label">Session is waiting for input</div>
-            <label class="setting-switch">
-              <input type="checkbox" id="pref-notify-waiting" ${notifyOnWaiting ? 'checked' : ''} />
-              <span class="setting-switch-slider"></span>
-            </label>
-          </div>
-
-          <div class="setting-row-inline" style="padding:4px 0">
-            <div class="setting-label">Session needs permission</div>
-            <label class="setting-switch">
-              <input type="checkbox" id="pref-notify-permission" ${notifyOnPermission ? 'checked' : ''} />
-              <span class="setting-switch-slider"></span>
-            </label>
-          </div>
-
-          <div class="setting-row-inline" style="padding:4px 0">
-            <div class="setting-label">Session finishes / exits</div>
-            <label class="setting-switch">
-              <input type="checkbox" id="pref-notify-exited" ${notifyOnExited ? 'checked' : ''} />
-              <span class="setting-switch-slider"></span>
-            </label>
-          </div>
-
-          <div class="setting-row-inline" style="padding:4px 0">
-            <div class="setting-label">Command completed (Working → Idle)</div>
-            <label class="setting-switch">
-              <input type="checkbox" id="pref-notify-completed" ${notifyOnCompleted ? 'checked' : ''} />
-              <span class="setting-switch-slider"></span>
-            </label>
-          </div>
-
-          <div class="setting-row-inline" style="padding:4px 0">
-            <div class="setting-label">Terminal error detected</div>
-            <label class="setting-switch">
-              <input type="checkbox" id="pref-notify-error" ${notifyOnError ? 'checked' : ''} />
-              <span class="setting-switch-slider"></span>
-            </label>
-          </div>
 
           <div class="setting-row-inline" style="padding:4px 0">
             <div class="setting-label">Claude needs input (plan, questions)</div>
@@ -513,11 +465,6 @@ async function renderSettingsTab(tab) {
       localStorage.setItem('ps-git-show-dirty', container.querySelector('#pref-git-dirty').checked);
       localStorage.setItem('ps-git-poll', gitPollEl.value);
       localStorage.setItem('ps-notifications', container.querySelector('#pref-notifications').checked);
-      localStorage.setItem('ps-notify-waiting', container.querySelector('#pref-notify-waiting').checked);
-      localStorage.setItem('ps-notify-permission', container.querySelector('#pref-notify-permission').checked);
-      localStorage.setItem('ps-notify-exited', container.querySelector('#pref-notify-exited').checked);
-      localStorage.setItem('ps-notify-completed', container.querySelector('#pref-notify-completed').checked);
-      localStorage.setItem('ps-notify-error', container.querySelector('#pref-notify-error').checked);
       localStorage.setItem('ps-notify-claude-input', container.querySelector('#pref-notify-claude-input').checked);
       localStorage.setItem('ps-notify-claude-finished', container.querySelector('#pref-notify-claude-finished').checked);
       localStorage.setItem('ps-notify-sound', container.querySelector('#pref-notify-sound').checked);
