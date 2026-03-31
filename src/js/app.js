@@ -2394,7 +2394,7 @@ const ACTIVITIES = [
   { name: 'dance',   cls: 'act-dance',   duration: [4, 7] },
   { name: 'type',    cls: 'act-type',    duration: [10, 18] },
   { name: 'bounce',  cls: 'act-bounce',  duration: [3, 5] },
-  { name: 'sweep',   cls: 'act-sweep',   duration: [8, 14],  speech: 'Tidying up.' },
+  { name: 'sweep',   cls: 'act-sweep',   duration: [8, 14],  speech: 'Just a little maintenance.' },
   { name: 'phone',   cls: 'act-phone',   duration: [10, 20], speech: 'Mhm... yeah... mhm.' },
   { name: 'code',    cls: 'act-code',    duration: [12, 22], speech: 'Don\'t mind me.' },
   { name: 'mop',     cls: 'act-mop',     duration: [8, 14] },
@@ -3159,6 +3159,15 @@ function robotClearActivity() {
   robotEl.classList.remove('walking', 'face-left', 'walk-anticipate', 'walk-arrive');
   for (const act of ACTIVITIES) {
     robotEl.classList.remove(act.cls);
+  }
+  // Clean up any active special event state
+  if (robotSpecialActive) {
+    robotSpecialActive = false;
+    robotSpecialName = null;
+    specialClickCount = 0;
+    robotEl.classList.remove('act-special-broom', 'act-special-cartwheel');
+    const deskProp = document.getElementById('robot-prop-desk');
+    if (deskProp) { deskProp.style.transition = 'none'; deskProp.style.right = '-200px'; }
   }
   robotEl.style.transition = 'none';
 }
