@@ -2453,7 +2453,7 @@ const CONTEXTUAL_QUIPS = [
 // Animation frequency settings: [idlePauseMin, idlePauseMax, contextInterval, walkChance]
 const FREQUENCY_SETTINGS = {
   low:    { idleMin: 200, idleMax: 300, contextInterval: 60000, walkChance: 0.1 },
-  medium: { idleMin: 60,  idleMax: 100, contextInterval: 35000, walkChance: 0.2 },
+  medium: { idleMin: 40,  idleMax: 70,  contextInterval: 35000, walkChance: 0.45 },
   high:   { idleMin: 30,  idleMax: 60,  contextInterval: 20000, walkChance: 0.3 },
 };
 
@@ -2462,6 +2462,10 @@ let robotTimer = null;
 let robotFacingLeft = false;
 let robotOverride = null; // status override (working/waiting/exited)
 let lastActivityIndex = -1;
+let robotSpecialActive = false;
+let robotSpecialName = null;
+let specialClickCount = 0;
+let specialEventScheduleTimer = null;
 let lastContextQuip = '';
 let contextScanTimer = null;
 
@@ -2536,6 +2540,7 @@ function robotInit() {
     const dy = e.clientY - (rect.top + rect.height / 2);
     if (Math.abs(dx) > 40 || Math.abs(dy) > 50) return;
 
+    if (robotSpecialActive) cancelSpecialEvent();
     isDragging = true;
     hasDragged = false;
     secretFired = false;
@@ -2630,6 +2635,21 @@ function robotInit() {
   let clickResetTimer = null;
 
   overlay?.addEventListener('click', (e) => {
+    if (robotSpecialActive) {
+      specialClickCount++;
+      if (specialClickCount >= 2) {
+        cancelSpecialEvent();
+      } else {
+        const quipMap = {
+          desk:      ["I'm in the zone.", 'One sec...', 'Almost done.'],
+          broom:     ["I'm sweeping here.", 'Can it wait?', 'One more pass.'],
+          cartwheel: ['Woo!', 'Did you see that?', 'Nailed it.'],
+        };
+        const quips = quipMap[robotSpecialName] || ['One moment.'];
+        showSpeech(quips[Math.floor(Math.random() * quips.length)], 2500, true);
+      }
+      return;
+    }
     if (hasDragged || secretFired) { hasDragged = false; secretFired = false; return; }
     touchInteraction();
     const rect = robotEl.getBoundingClientRect();
@@ -2837,6 +2857,176 @@ function toggleRobot(enabled) {
     localStorage.setItem('ps-robot-enabled', 'false');
     clearTimeout(robotTimer);
   }
+}
+
+function walkTo(destX, callback, clamp = true) {
+  const overlay = document.getElementById('robot-overlay');
+  const overlayWidth = overlay ? overlay.clientWidth : window.innerWidth;
+  const dest = clamp ? Math.max(4, Math.min(overlayWidth - 80, destX)) : destX;
+  const currentLeft = parseInt(robotEl.style.left) || 4;
+  const distance = Math.abs(dest - currentLeft);
+  const duration = Math.max(1, distance * 0.05);
+  robotFacingLeft = dest < currentLeft;
+  robotEl.classList.toggle('face-left', robotFacingLeft);
+  robotEl.classList.add('walk-anticipate');
+  setTimeout(() => {
+    robotEl.classList.remove('walk-anticipate');
+    robotEl.classList.add('walking');
+    robotEl.style.transition = `left ${duration}s linear`;
+    robotEl.style.left = dest + 'px';
+    setTimeout(() => {
+      robotEl.classList.remove('walking');
+      robotEl.style.transition = 'none';
+      robotEl.classList.add('walk-arrive');
+      setTimeout(() => { robotEl.classList.remove('walk-arrive'); if (callback) callback(); }, 300);
+    }, duration * 1000);
+  }, 200);
+}
+
+function scheduleSpecialEvent() {
+  clearTimeout(specialEventScheduleTimer);
+  const delay = (4 + Math.random() * 2) * 60 * 1000; // 4-6 min
+  specialEventScheduleTimer = setTimeout(() => {
+    if (!robotEl || robotOverride || localStorage.getItem('ps-robot-enabled') === 'false') {
+      scheduleSpecialEvent(); return;
+    }
+    clearTimeout(robotTimer);
+    robotClearActivity();
+    const events = [triggerDeskEvent, triggerBroomEvent, triggerCartwheelEvent];
+    events[Math.floor(Math.random() * events.length)]();
+  }, delay);
+}
+
+function cancelSpecialEvent() {
+  if (!robotSpecialActive) return;
+  robotSpecialActive = false;
+  robotSpecialName = null;
+  specialClickCount = 0;
+  clearTimeout(robotTimer);
+  robotClearActivity();
+  robotEl.classList.remove('act-special-broom', 'act-special-cartwheel');
+  const deskProp = document.getElementById('robot-prop-desk');
+  if (deskProp) { deskProp.style.transition = 'none'; deskProp.style.right = '-200px'; }
+  showSpeech('Fine, fine.', 2000, true);
+  setTimeout(() => { robotNext(); scheduleSpecialEvent(); }, 1200);
+}
+
+function triggerDeskEvent() {
+  robotSpecialActive = true; robotSpecialName = 'desk'; specialClickCount = 0;
+  const overlay = document.getElementById('robot-overlay');
+  const ow = overlay ? overlay.clientWidth : 800;
+  const deskProp = document.getElementById('robot-prop-desk');
+  const deskWidth = 160, deskRightGap = 20;
+
+  // Slide desk in from right
+  if (deskProp) { deskProp.style.transition = ''; deskProp.style.right = deskRightGap + 'px'; }
+
+  // Walk robot to be centered behind the desk
+  const robotDest = ow - deskRightGap - deskWidth + deskWidth / 2 - 34;
+  setTimeout(() => {
+    walkTo(robotDest, () => {
+      showSpeech('Time to get some work done.', 3500, true);
+      setTimeout(() => {
+        robotEl.classList.add('act-code');
+        const workDur = 14000 + Math.random() * 6000;
+        robotTimer = setTimeout(() => {
+          robotEl.classList.remove('act-code');
+          showSpeech('Good session.', 2500, true);
+          if (deskProp) { deskProp.style.transition = ''; deskProp.style.right = '-200px'; }
+          setTimeout(() => {
+            if (!robotSpecialActive) return; // already cancelled
+            robotSpecialActive = false; robotSpecialName = null;
+            robotNext(); scheduleSpecialEvent();
+          }, 1200);
+        }, workDur);
+      }, 500);
+    });
+  }, 900);
+}
+
+function triggerBroomEvent() {
+  robotSpecialActive = true; robotSpecialName = 'broom'; specialClickCount = 0;
+  const overlay = document.getElementById('robot-overlay');
+  const ow = overlay ? overlay.clientWidth : 800;
+
+  // Phase 1: Walk to left edge
+  walkTo(4, () => {
+    robotEl.style.transition = 'left 0.5s ease-in';
+    robotEl.style.left = '-80px';
+    setTimeout(() => {
+      // Phase 2: Reappear on right with broom
+      robotEl.style.transition = 'none';
+      robotEl.style.left = (ow + 10) + 'px';
+      robotFacingLeft = true;
+      robotEl.classList.add('face-left', 'act-special-broom');
+      showSpeech('Tidying up.', 3000, true);
+      // Phase 3: Sweep across to left
+      setTimeout(() => {
+        const sweepDur = Math.max(4, ow * 0.006);
+        robotEl.style.transition = `left ${sweepDur}s linear`;
+        robotEl.style.left = '-80px';
+        robotTimer = setTimeout(() => {
+          if (!robotSpecialActive) return;
+          // Phase 4: Remove broom, re-enter from left
+          robotEl.classList.remove('act-special-broom');
+          robotFacingLeft = false;
+          robotEl.classList.remove('face-left');
+          robotEl.style.transition = 'none';
+          const returnDest = Math.floor(ow * 0.25 + Math.random() * ow * 0.35);
+          const returnDur = Math.max(2, returnDest * 0.05);
+          robotEl.classList.add('walking');
+          robotEl.style.transition = `left ${returnDur}s linear`;
+          robotEl.style.left = returnDest + 'px';
+          robotTimer = setTimeout(() => {
+            if (!robotSpecialActive) return;
+            robotEl.classList.remove('walking');
+            robotEl.style.transition = 'none';
+            showSpeech('All clean.', 2500, true);
+            setTimeout(() => {
+              robotSpecialActive = false; robotSpecialName = null;
+              robotNext(); scheduleSpecialEvent();
+            }, 1500);
+          }, returnDur * 1000);
+        }, sweepDur * 1000);
+      }, 400);
+    }, 600);
+  });
+}
+
+function triggerCartwheelEvent() {
+  robotSpecialActive = true; robotSpecialName = 'cartwheel'; specialClickCount = 0;
+  const overlay = document.getElementById('robot-overlay');
+  const ow = overlay ? overlay.clientWidth : 800;
+
+  const startX = Math.floor(ow * 0.2 + Math.random() * ow * 0.2);
+  walkTo(startX, () => {
+    showSpeech('Watch this.', 2000, true);
+    setTimeout(() => {
+      if (!robotSpecialActive) return;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      const distance = 160 + Math.random() * 80;
+      const destX = Math.max(4, Math.min(ow - 80, startX + dir * distance));
+      robotFacingLeft = dir < 0;
+      robotEl.classList.toggle('face-left', robotFacingLeft);
+
+      const wheelDur = 1.8;
+      robotEl.classList.add('act-special-cartwheel');
+      robotEl.style.transition = `left ${wheelDur}s linear`;
+      robotEl.style.left = destX + 'px';
+
+      robotTimer = setTimeout(() => {
+        if (!robotSpecialActive) return;
+        robotEl.classList.remove('act-special-cartwheel');
+        robotEl.style.transition = 'none';
+        const reactions = ['Nailed it.', 'Still got it.', '...that was harder than it looks.', 'Ta-da.'];
+        showSpeech(reactions[Math.floor(Math.random() * reactions.length)], 2500, true);
+        setTimeout(() => {
+          robotSpecialActive = false; robotSpecialName = null;
+          robotNext(); scheduleSpecialEvent();
+        }, 1500);
+      }, wheelDur * 1000 + 100);
+    }, 2200);
+  });
 }
 
 function robotNext() {
@@ -3087,6 +3277,7 @@ function showSpeech(text, duration = 3000, priority = false) {
 function setupMascotSpeech() {
   robotInit();
   startTipTimer();
+  scheduleSpecialEvent();
 }
 
 let lastTipIndex = -1;

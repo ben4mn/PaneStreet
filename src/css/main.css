@@ -1649,6 +1649,30 @@ html, body {
   100% { transform: rotate(2deg); }
 }
 
+/* --- Special event: broom sweep --- */
+.robot-broom-prop { display: none; }
+#footer-mascot.act-special-broom .robot-broom-prop { display: block; }
+
+/* --- Special event: cartwheel --- */
+@keyframes cartwheel-spin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+#footer-mascot.act-special-cartwheel .robot-body {
+  animation: cartwheel-spin 0.45s linear infinite;
+  transform-origin: 18px 19px;
+}
+#footer-mascot.act-special-cartwheel .robot-desk-layer { display: none; }
+
+/* --- Special event: external desk prop --- */
+#robot-prop-desk {
+  position: absolute;
+  bottom: 0;
+  right: -200px;
+  pointer-events: none;
+  transition: right 0.8s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
 /* Speech bubble */
 .mascot-speech {
   position: absolute;
