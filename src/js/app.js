@@ -2722,7 +2722,7 @@ function robotInit() {
     const delay = (4 + Math.random() * 6) * 1000;
     eyeGlanceTimer = setTimeout(() => {
       if (!robotEl || localStorage.getItem('ps-robot-enabled') === 'false' ||
-          robotEl.classList.contains('act-look') || robotEl.classList.contains('act-code')) {
+          ['act-look','act-code','act-dance','act-bounce','act-wave','act-sleep'].some(c => robotEl.classList.contains(c))) {
         scheduleNextGlance();
         return;
       }

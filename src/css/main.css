@@ -1141,13 +1141,23 @@ html, body {
 }
 
 /* --- Always-on ambient (very subtle, slow) --- */
-.robot-eyes { animation: robot-blink 8s ease-in-out infinite; }
 .robot-antenna { animation: robot-antenna 4s ease-in-out infinite; transform-origin: 18px 6.5px; }
 
-@keyframes robot-blink {
-  0%, 46%, 49%, 100% { opacity: 1; }
-  47.5% { opacity: 0.1; }
+/* Eye base — transform-box lets scaleY work from each eye's own center */
+.robot-eye-l, .robot-eye-r {
+  transform-box: fill-box;
+  transform-origin: center;
 }
+.robot-eye-l { animation: robot-blink 6s ease-in-out infinite; }
+.robot-eye-r { animation: robot-blink 6s ease-in-out 0.06s infinite; }
+
+@keyframes robot-blink {
+  0%, 44%, 50%, 100% { transform: scaleY(1); }
+  47%               { transform: scaleY(0); }
+}
+
+/* Mouth base — grin and flat hidden until an expression activates them */
+.robot-mouth-grin, .robot-mouth-flat { opacity: 0; }
 @keyframes robot-antenna {
   0%, 100% { transform: rotate(0deg); }
   30% { transform: rotate(2deg); }
@@ -1280,6 +1290,12 @@ html, body {
   30% { transform: rotate(-1deg); }
   70% { transform: rotate(1deg); }
 }
+#footer-mascot.act-look .robot-eye-l,
+#footer-mascot.act-look .robot-eye-r { animation: look-alert 3s ease-in-out infinite; }
+@keyframes look-alert {
+  0%, 100% { transform: scaleY(0.9); }
+  50%      { transform: scaleY(1.05); }
+}
 
 /* Waving — right arm goes up with body counter-sway */
 #footer-mascot.act-wave .robot-arm-r {
@@ -1298,9 +1314,19 @@ html, body {
   0%, 100% { transform: rotate(0deg); }
   50% { transform: rotate(2deg); }
 }
+#footer-mascot.act-wave .robot-eye-r {
+  animation: do-wink 0.5s ease-in-out 1s forwards, robot-blink 6s 2s infinite;
+}
+@keyframes do-wink {
+  0%, 100% { transform: scaleY(1); }
+  20%, 75% { transform: scaleY(0); }
+}
 
-/* Sleeping — eyes close, deeper lean, antenna droops */
-#footer-mascot.act-sleep .robot-eyes { opacity: 0.05; animation: none; }
+/* Sleeping — eyes flatten, lean, antenna droops, mouth neutral */
+#footer-mascot.act-sleep .robot-eye-l,
+#footer-mascot.act-sleep .robot-eye-r { animation: none; transform: scaleY(0.05); }
+#footer-mascot.act-sleep .robot-mouth-smile { opacity: 0; }
+#footer-mascot.act-sleep .robot-mouth-flat  { opacity: 1; }
 #footer-mascot.act-sleep .robot-body {
   animation: sleep-lean 4s ease-in-out infinite;
   transform-origin: center bottom;
@@ -1392,6 +1418,12 @@ html, body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+#footer-mascot.act-think .robot-eye-l,
+#footer-mascot.act-think .robot-eye-r { animation: think-squint 3s ease-in-out infinite; }
+@keyframes think-squint {
+  0%, 100% { transform: scaleY(0.5); }
+  50%      { transform: scaleY(0.38); }
+}
 
 /* Dancing — full body sway with arms and legs */
 #footer-mascot.act-dance .robot-body {
@@ -1445,6 +1477,18 @@ html, body {
   0%, 100% { transform: scaleX(1); }
   50% { transform: scaleX(0.9); }
 }
+#footer-mascot.act-dance .robot-eye-l, #footer-mascot.act-dance .robot-eye-r,
+#footer-mascot.act-bounce .robot-eye-l, #footer-mascot.act-bounce .robot-eye-r {
+  animation: happy-squint 0.4s ease-in-out infinite alternate;
+}
+@keyframes happy-squint {
+  0%   { transform: scaleY(0.22); }
+  100% { transform: scaleY(0.32); }
+}
+#footer-mascot.act-dance .robot-mouth-smile,
+#footer-mascot.act-bounce .robot-mouth-smile { opacity: 0; }
+#footer-mascot.act-dance .robot-mouth-grin,
+#footer-mascot.act-bounce .robot-mouth-grin  { opacity: 1; }
 
 /* Typing — arms alternate with lean and head tilt */
 #footer-mascot.act-type .robot-arm-l {
@@ -1573,6 +1617,14 @@ html, body {
   0%, 90%, 100% { transform: translateY(0.5px); }
   50% { transform: translateY(0); }
 }
+#footer-mascot.act-code .robot-eye-l, #footer-mascot.act-code .robot-eye-r,
+#footer-mascot.act-type .robot-eye-l, #footer-mascot.act-type .robot-eye-r {
+  animation: focus-squint 2s ease-in-out infinite;
+}
+@keyframes focus-squint {
+  0%, 100% { transform: scaleY(0.45); }
+  50%      { transform: scaleY(0.32); }
+}
 
 /* Mopping — steady side-to-side sway with arm extended */
 #footer-mascot.act-mop .robot-body {
@@ -1606,6 +1658,24 @@ html, body {
   50% { transform: translateX(-0.5px); }
 }
 
+/* Working — focused squint */
+#footer-mascot.working .robot-eye-l,
+#footer-mascot.working .robot-eye-r { animation: work-focus 1.5s ease-in-out infinite; }
+@keyframes work-focus {
+  0%, 100% { transform: scaleY(0.65); }
+  50%      { transform: scaleY(0.5); }
+}
+/* Waiting — wide alert eyes */
+#footer-mascot.waiting .robot-eye-l,
+#footer-mascot.waiting .robot-eye-r { animation: wait-wide 2s ease-in-out infinite; }
+@keyframes wait-wide {
+  0%, 100% { transform: scaleY(1.1); }
+  50%      { transform: scaleY(1.3); }
+}
+/* Broom special — determined squint */
+#footer-mascot.act-special-broom .robot-eye-l,
+#footer-mascot.act-special-broom .robot-eye-r { animation: focus-squint 1.2s ease-in-out infinite; }
+
 /* --- Status overrides (applied by JS alongside activity) --- */
 #footer-mascot.exited {
   opacity: 0.25;
@@ -1631,6 +1701,12 @@ html, body {
 }
 #footer-mascot.act-falling .robot-body {
   animation: falling-wobble 0.5s ease-in-out infinite alternate;
+}
+#footer-mascot.act-falling .robot-eye-l,
+#footer-mascot.act-falling .robot-eye-r { animation: panic-wide 0.3s ease-in-out infinite alternate; }
+@keyframes panic-wide {
+  0%   { transform: scaleY(1.1); }
+  100% { transform: scaleY(1.5); }
 }
 @keyframes falling-arm-l {
   0% { transform: rotate(-10deg); }

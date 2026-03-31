@@ -104,16 +104,16 @@
             <ellipse cx="7" cy="13.5" rx="1.2" ry="1.4" fill="var(--text-muted)" opacity="0.4"/>
             <ellipse cx="29" cy="13.5" rx="2.2" ry="2.5" fill="var(--text-secondary)"/>
             <ellipse cx="29" cy="13.5" rx="1.2" ry="1.4" fill="var(--text-muted)" opacity="0.4"/>
-            <!-- Eyes (glowing accent arcs — happy expression) -->
+            <!-- Eyes (circles — shape-morphable via CSS scaleY) -->
             <g class="robot-eyes">
-              <!-- Left eye: arc (happy squint) -->
-              <path class="robot-eye-l" d="M12.5 12.5 Q14.5 10 16.5 12.5" stroke="var(--accent)" stroke-width="1.4" fill="none" stroke-linecap="round"/>
-              <!-- Right eye: arc (happy squint) -->
-              <path class="robot-eye-r" d="M19.5 12.5 Q21.5 10 23.5 12.5" stroke="var(--accent)" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+              <circle class="robot-eye-l" cx="14.5" cy="11" r="2" fill="var(--accent)"/>
+              <circle class="robot-eye-r" cx="21.5" cy="11" r="2" fill="var(--accent)"/>
             </g>
-            <!-- Mouth (small glowing smile) -->
+            <!-- Mouth (three shapes — only smile visible by default) -->
             <g class="robot-mouth">
-              <path d="M15.5 16 Q18 18 20.5 16" stroke="var(--accent)" stroke-width="1" fill="none" stroke-linecap="round"/>
+              <path class="robot-mouth-smile" d="M15.5 16 Q18 18 20.5 16"   stroke="var(--accent)" stroke-width="1"   fill="none" stroke-linecap="round"/>
+              <path class="robot-mouth-grin"  d="M14 15.5 Q18 20 22 15.5"   stroke="var(--accent)" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+              <path class="robot-mouth-flat"  d="M16 17 Q18 17 20 17"       stroke="var(--accent)" stroke-width="0.9" fill="none" stroke-linecap="round"/>
             </g>
           </g>
           <!-- Body (solid with depth tinting) -->
