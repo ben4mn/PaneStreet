@@ -2685,32 +2685,66 @@ function robotInit() {
     }
   });
 
-  // --- Eye tracking — eyes follow the cursor ---
-  let eyeRaf = null;
+  // --- Eye tracking — lazy glances toward cursor, not constant following ---
+  let eyeGlanceTimer = null;
+  let eyeCurrentOX = 0, eyeCurrentOY = 0;
+  let eyeTargetOX = 0, eyeTargetOY = 0;
   let eyeMouseX = 0, eyeMouseY = 0;
+  let eyeGlancing = false;
+
   document.addEventListener('mousemove', (e) => {
     eyeMouseX = e.clientX;
     eyeMouseY = e.clientY;
-    if (eyeRaf) return;
-    eyeRaf = requestAnimationFrame(() => {
-      eyeRaf = null;
-      if (!robotEl || localStorage.getItem('ps-robot-enabled') === 'false') return;
+  });
+
+  function scheduleNextGlance() {
+    // Glance every 4-10 seconds — feels natural, not robotic
+    const delay = (4 + Math.random() * 6) * 1000;
+    eyeGlanceTimer = setTimeout(() => {
+      if (!robotEl || localStorage.getItem('ps-robot-enabled') === 'false' ||
+          robotEl.classList.contains('act-look') || robotEl.classList.contains('act-code')) {
+        scheduleNextGlance();
+        return;
+      }
+      // Compute target offset toward cursor
       const rect = robotEl.getBoundingClientRect();
       const headCX = rect.left + rect.width * 0.5;
-      const headCY = rect.top + rect.height * 0.32; // eye level (~30% down the sprite)
+      const headCY = rect.top + rect.height * 0.32;
       const dx = eyeMouseX - headCX;
       const dy = eyeMouseY - headCY;
       const scaleX = 36 / rect.width;
       const scaleY = 38 / rect.height;
-      const ox = Math.max(-1.3, Math.min(1.3, dx * scaleX * 0.12));
-      const oy = Math.max(-0.7, Math.min(0.7, dy * scaleY * 0.08));
-      const eyes = robotEl.querySelector('.robot-eyes');
-      // Only apply JS tracking when no CSS animation is using transform on the eyes
-      if (eyes && !robotEl.classList.contains('act-look') && !robotEl.classList.contains('act-code')) {
-        eyes.setAttribute('transform', `translate(${ox.toFixed(2)},${oy.toFixed(2)})`);
-      }
-    });
-  });
+      eyeTargetOX = Math.max(-1.3, Math.min(1.3, dx * scaleX * 0.12));
+      eyeTargetOY = Math.max(-0.7, Math.min(0.7, dy * scaleY * 0.08));
+      eyeGlancing = true;
+
+      // Hold the glance for 1.5-3s, then drift back to neutral
+      setTimeout(() => {
+        eyeTargetOX = 0;
+        eyeTargetOY = 0;
+        eyeGlancing = false;
+        scheduleNextGlance();
+      }, 1500 + Math.random() * 1500);
+
+      applyEyeTransform();
+    }, delay);
+  }
+
+  function applyEyeTransform() {
+    if (!robotEl) return;
+    const eyes = robotEl.querySelector('.robot-eyes');
+    if (!eyes) return;
+    // Smooth lerp toward target
+    eyeCurrentOX += (eyeTargetOX - eyeCurrentOX) * 0.18;
+    eyeCurrentOY += (eyeTargetOY - eyeCurrentOY) * 0.18;
+    eyes.setAttribute('transform', `translate(${eyeCurrentOX.toFixed(2)},${eyeCurrentOY.toFixed(2)})`);
+    // Keep animating until we're settled
+    if (Math.abs(eyeCurrentOX - eyeTargetOX) > 0.02 || Math.abs(eyeCurrentOY - eyeTargetOY) > 0.02) {
+      requestAnimationFrame(applyEyeTransform);
+    }
+  }
+
+  scheduleNextGlance();
 
   // If window resizes and robot is off-screen, walk back into view
   window.addEventListener('resize', () => {
