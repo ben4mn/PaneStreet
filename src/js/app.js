@@ -40,8 +40,19 @@ document.addEventListener('visibilitychange', () => {
   windowFocused = !document.hidden;
 });
 // Tauri native window focus events (most reliable for OS-level app switching)
-listen('tauri://focus', () => { windowFocused = true; });
-listen('tauri://blur', () => { windowFocused = false; });
+let lastBlurTime = 0;
+listen('tauri://focus', () => {
+  windowFocused = true;
+  const awayMs = Date.now() - lastBlurTime;
+  if (lastBlurTime > 0 && awayMs > 2 * 60000 && Math.random() < 0.12) {
+    setTimeout(() => {
+      if (!robotEl || robotOverride || robotSpecialActive) return;
+      const qs = ["Oh, you're back.", 'Welcome back.', 'There you are.', 'Back already?'];
+      showSpeech(qs[Math.floor(Math.random() * qs.length)], 2500, true);
+    }, 3000 + Math.random() * 4000);
+  }
+});
+listen('tauri://blur', () => { windowFocused = false; lastBlurTime = Date.now(); });
 
 // --- Grid Layout ---
 
@@ -1063,6 +1074,13 @@ async function createSession(restoreCwd, restoreScrollback) {
   };
 
   sessions.push(session);
+
+  // Terminal count reaction — once per session at 5 terminals
+  if (sessions.length === 5 && !sessionCountReacted) {
+    sessionCountReacted = true;
+    setTimeout(() => { if (robotEl && !robotOverride) showSpeech("You've got a lot going on.", 3000); }, 1500);
+  }
+
   rebuildSidebar();
 
   // Exit maximize mode when adding a new session
@@ -1942,6 +1960,10 @@ function setupSidebarToggle() {
     const isCollapsing = !sidebar.classList.contains('collapsed');
     sidebar.classList.toggle('collapsed');
     robotOverlay?.classList.toggle('sidebar-collapsed', isCollapsing);
+    if (isCollapsing && Math.random() < 0.2 && Date.now() - sidebarReactCooldown > 10 * 60000) {
+      sidebarReactCooldown = Date.now();
+      setTimeout(() => { if (robotEl && !robotOverride) showSpeech('More room.', 2000); }, 600);
+    }
     // Clear inline width so CSS class takes effect
     if (isCollapsing) {
       sidebar._savedWidth = sidebar.style.width || '';
@@ -2213,7 +2235,10 @@ async function maybeNotify(session, status) {
       ClaudeNeedsInput: 'needs your input',
       ClaudeFinished: 'Claude is done',
     }[status];
-    if (friendlyStatus) showSpeech(`${session.name}: ${friendlyStatus}`, 4000, true);
+    if (friendlyStatus) {
+      showSpeech(`${session.name}: ${friendlyStatus}`, 4000, true);
+      if (robotEl?.classList.contains('act-sleep')) robotStartle();
+    }
   }
 
   // Only send native push notifications for Claude-specific events
@@ -2396,8 +2421,10 @@ const ACTIVITIES = [
   { name: 'bounce',  cls: 'act-bounce',  duration: [3, 5] },
   { name: 'sweep',   cls: 'act-sweep',   duration: [8, 14],  speech: 'Just a little maintenance.' },
   { name: 'phone',   cls: 'act-phone',   duration: [10, 20], speech: 'Mhm... yeah... mhm.' },
-  { name: 'code',    cls: 'act-code',    duration: [12, 22], speech: 'Don\'t mind me.' },
-  { name: 'mop',     cls: 'act-mop',     duration: [8, 14] },
+  { name: 'code',         cls: 'act-code',         duration: [12, 22], speech: 'Don\'t mind me.' },
+  { name: 'mop',          cls: 'act-mop',          duration: [8, 14] },
+  { name: 'shimmy',       cls: 'act-shimmy',       duration: [3, 5] },
+  { name: 'antenna-fix',  cls: 'act-antenna-fix',  duration: [2, 3] },
 ];
 
 const APP_TIPS = [
@@ -2468,6 +2495,12 @@ let specialClickCount = 0;
 let specialEventScheduleTimer = null;
 let lastContextQuip = '';
 let contextScanTimer = null;
+let longWorkingTimer = null;
+let sessionCountReacted = false;
+let sidebarReactCooldown = 0;
+let staredBackCooldown = 0;
+let startledCooldown = 0;
+let hiccupTimer = null;
 
 // Boredom tracking
 let robotLastInteraction = Date.now();
@@ -2493,6 +2526,89 @@ function triggerSecretReaction() {
   do { idx = Math.floor(Math.random() * SECRET_REACTIONS.length); } while (idx === lastSecretIndex && SECRET_REACTIONS.length > 1);
   lastSecretIndex = idx;
   SECRET_REACTIONS[idx]();
+}
+
+function triggerPetReaction() {
+  clearTimeout(robotTimer);
+  robotClearActivity();
+  robotEl.classList.add('act-bounce');
+  const qs = ['Oh! Hi.', 'Hey there.', '...thanks.', 'That tickles.', 'Hello!'];
+  showSpeech(qs[Math.floor(Math.random() * qs.length)], 2000, true);
+  robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 1500);
+}
+
+function robotStartle() {
+  if (!robotEl || robotOverride || robotSpecialActive) return;
+  if (Date.now() - startledCooldown < 3 * 60000) return;
+  startledCooldown = Date.now();
+  const wasSleeping = robotEl.classList.contains('act-sleep');
+  clearTimeout(robotTimer);
+  robotClearActivity();
+  robotEl.classList.add('act-startled');
+  if (wasSleeping) showSpeech('Wha—', 1500, true);
+  setTimeout(() => { robotEl.classList.remove('act-startled'); robotNext(); }, 600);
+}
+
+function robotHiccup() {
+  if (!robotEl || robotOverride || robotSpecialActive) return;
+  if (['act-sleep', 'act-code', 'act-type'].some(c => robotEl.classList.contains(c))) return;
+  robotEl.classList.add('act-hiccup');
+  setTimeout(() => robotEl.classList.remove('act-hiccup'), 350);
+}
+
+function scheduleHiccup() {
+  const delay = (20 + Math.random() * 30) * 60000;
+  hiccupTimer = setTimeout(() => {
+    if (localStorage.getItem('ps-robot-enabled') !== 'false') robotHiccup();
+    scheduleHiccup();
+  }, delay);
+}
+
+function triggerYawnBeforeSleep(callback) {
+  robotEl.classList.add('act-yawn');
+  setTimeout(() => { robotEl.classList.remove('act-yawn'); callback(); }, 2000);
+}
+
+function setupCaughtWatching() {
+  let hoverTimer = null;
+  const overlay = document.getElementById('robot-overlay');
+  overlay?.addEventListener('mousemove', (e) => {
+    if (!robotEl) return;
+    const rect = robotEl.getBoundingClientRect();
+    const inZone = Math.abs(e.clientX - (rect.left + rect.width / 2)) < 40 &&
+                   Math.abs(e.clientY - (rect.top + rect.height / 2)) < 50;
+    if (inZone) {
+      if (!hoverTimer) hoverTimer = setTimeout(() => {
+        hoverTimer = null;
+        if (Date.now() - staredBackCooldown < 5 * 60000) return;
+        if (robotOverride || robotSpecialActive) return;
+        staredBackCooldown = Date.now();
+        const qs = ["I see you.", "Something I can help with?", "...hi.", "I can feel you staring."];
+        showSpeech(qs[Math.floor(Math.random() * qs.length)], 3000, true);
+        robotEl.classList.add('act-look');
+        setTimeout(() => robotEl.classList.remove('act-look'), 3000);
+      }, 5000);
+    } else {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+  });
+}
+
+function applyTimeOfDay() {
+  const h = new Date().getHours();
+  const overlay = document.getElementById('robot-overlay');
+  const isLate = h >= 23 || h < 4;
+  const isMorning = h >= 5 && h < 9;
+  overlay?.classList.toggle('time-late', isLate);
+  const tod = isLate ? 'late' : isMorning ? 'morning' : '';
+  if (!tod) return;
+  const key = 'ps-time-' + new Date().toDateString() + '-' + tod;
+  if (sessionStorage.getItem(key)) return;
+  sessionStorage.setItem(key, '1');
+  const delay = 6000 + Math.random() * 4000;
+  if (isLate) setTimeout(() => { if (robotEl && !robotOverride) showSpeech("It's late.", 3000); }, delay);
+  else if (isMorning) setTimeout(() => { if (robotEl && !robotOverride) showSpeech('Morning.', 2500); }, delay);
 }
 
 // Theme reaction cooldown
@@ -2532,7 +2648,9 @@ function robotInit() {
   let dragStartY = 0;
   let dragStartLeft = 0;
   let holdTimer = null;
+  let petTimer = null;
   let secretFired = false;
+  let petFired = false;
 
   overlay?.addEventListener('mousedown', (e) => {
     const rect = robotEl.getBoundingClientRect();
@@ -2544,6 +2662,7 @@ function robotInit() {
     isDragging = true;
     hasDragged = false;
     secretFired = false;
+    petFired = false;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
     dragStartLeft = parseInt(robotEl.style.left) || 0;
@@ -2555,10 +2674,21 @@ function robotInit() {
     robotEl.classList.add('dragging');
     e.preventDefault();
 
-    // Hold-to-secret: if held still for 2s without dragging, trigger a surprise
+    // 1s hold = pet reaction
+    petTimer = setTimeout(() => {
+      if (!hasDragged && !secretFired) {
+        petFired = true;
+        isDragging = false;
+        robotEl.classList.remove('dragging');
+        triggerPetReaction();
+      }
+    }, 1000);
+
+    // 2s hold = secret surprise
     holdTimer = setTimeout(() => {
       if (!hasDragged) {
         secretFired = true;
+        petFired = false;
         isDragging = false;
         robotEl.classList.remove('dragging');
         triggerSecretReaction();
@@ -2572,7 +2702,8 @@ function robotInit() {
     const deltaY = dragStartY - e.clientY; // up = positive
     if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
       hasDragged = true;
-      // Cancel hold-to-secret once the user starts dragging
+      // Cancel hold timers once the user starts dragging
+      if (petTimer)  { clearTimeout(petTimer);  petTimer = null; }
       if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
     }
     const ow = overlay ? overlay.clientWidth : window.innerWidth;
@@ -2591,6 +2722,7 @@ function robotInit() {
   ];
 
   document.addEventListener('mouseup', () => {
+    if (petTimer)  { clearTimeout(petTimer);  petTimer = null; }
     if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
     if (!isDragging) return;
     isDragging = false;
@@ -3057,9 +3189,13 @@ function robotWalk() {
   const distance = Math.abs(dest - currentLeft);
   const duration = Math.max(4, distance * 0.08); // ~0.08s per px, min 4s
 
-  // Face the right direction
+  // Moonwalk ~5% of the time
+  const isMoonwalk = !robotSpecialActive && Math.random() < 0.05;
+
+  // Face the right direction (moonwalk faces backwards)
   robotFacingLeft = dest < currentLeft;
-  robotEl.classList.toggle('face-left', robotFacingLeft);
+  robotEl.classList.toggle('face-left', isMoonwalk ? !robotFacingLeft : robotFacingLeft);
+  if (isMoonwalk) robotEl.classList.add('moonwalk');
 
   // Anticipation crouch before walking
   robotEl.classList.add('walk-anticipate');
@@ -3073,7 +3209,14 @@ function robotWalk() {
 
     // After arriving, settle then do an activity
     robotTimer = setTimeout(() => {
-      robotEl.classList.remove('walking');
+      robotEl.classList.remove('walking', 'moonwalk');
+      robotEl.classList.toggle('face-left', robotFacingLeft);
+
+      // Occasional stumble on arrival (~8% chance)
+      if (Math.random() < 0.08) {
+        robotEl.classList.add('act-stumble');
+        setTimeout(() => robotEl.classList.remove('act-stumble'), 500);
+      }
 
       // Follow-through settle animation
       robotEl.classList.add('walk-arrive');
@@ -3097,13 +3240,12 @@ function robotDoActivity() {
   // Boredom level 3 (12+ min idle): force sleep
   if (boredLevel >= 3) {
     const sleepAct = ACTIVITIES.find(a => a.name === 'sleep');
-    robotEl.classList.add(sleepAct.cls);
-    showSpeech('Zzz...', 5000);
     const dur = sleepAct.duration[0] + Math.random() * (sleepAct.duration[1] - sleepAct.duration[0]);
-    robotTimer = setTimeout(() => {
-      robotClearActivity();
-      robotNext();
-    }, dur * 1000);
+    triggerYawnBeforeSleep(() => {
+      robotEl.classList.add(sleepAct.cls);
+      showSpeech('Zzz...', 5000);
+      robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, dur * 1000);
+    });
     return;
   }
 
@@ -3129,25 +3271,32 @@ function robotDoActivity() {
   lastActivityIndex = idx;
 
   const act = ACTIVITIES[idx];
+  const dur = act.duration[0] + Math.random() * (act.duration[1] - act.duration[0]);
+
+  // Yawn before sleep
+  if (act.name === 'sleep') {
+    triggerYawnBeforeSleep(() => {
+      robotEl.classList.add(act.cls);
+      showSpeech('Zzz...');
+      robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, dur * 1000);
+    });
+    return;
+  }
+
   robotEl.classList.add(act.cls);
 
   if (act.speech) {
     showSpeech(act.speech);
   }
-  if (act.name === 'sleep') {
-    showSpeech('Zzz...');
-  }
 
   // Occasional boredom quip while doing a boring activity
   if (boredLevel >= 1 && boringNames.includes(act.name) && Math.random() < 0.3) {
-    const dur = act.duration[0] + Math.random() * (act.duration[1] - act.duration[0]);
     setTimeout(() => {
       if (!robotOverride) showSpeech(BOREDOM_IDLE_QUIPS[Math.floor(Math.random() * BOREDOM_IDLE_QUIPS.length)], 3000);
     }, (dur * 0.5) * 1000);
   }
 
   // Stay in this activity for its duration, then move on
-  const dur = act.duration[0] + Math.random() * (act.duration[1] - act.duration[0]);
   robotTimer = setTimeout(() => {
     robotClearActivity();
     robotNext();
@@ -3156,7 +3305,8 @@ function robotDoActivity() {
 
 function robotClearActivity() {
   if (!robotEl) return;
-  robotEl.classList.remove('walking', 'face-left', 'walk-anticipate', 'walk-arrive');
+  robotEl.classList.remove('walking', 'face-left', 'walk-anticipate', 'walk-arrive', 'moonwalk');
+  robotEl.classList.remove('act-stumble', 'act-hiccup', 'act-startled', 'act-double-take', 'act-yawn');
   for (const act of ACTIVITIES) {
     robotEl.classList.remove(act.cls);
   }
@@ -3194,6 +3344,11 @@ function sampleTerminalContext() {
         // Don't repeat the same quip
         if (quip === lastContextQuip) continue;
         lastContextQuip = quip;
+        // Double-take on fatal/error patterns (~30% chance)
+        if (/fatal|FATAL|killed|Killed|error\[|SyntaxError|TypeError|panic:/i.test(tail) && Math.random() < 0.3 && !robotOverride) {
+          robotEl.classList.add('act-double-take');
+          setTimeout(() => robotEl.classList.remove('act-double-take'), 450);
+        }
         showSpeech(quip, 4000);
         return;
       }
@@ -3233,9 +3388,16 @@ function updateMascot(status, silent = false) {
   if (status === 'Working') {
     robotOverride = 'working';
     clearTimeout(robotTimer);
+    clearTimeout(longWorkingTimer);
     robotClearActivity();
     robotEl.classList.add('working');
     if (!silent) showSpeech(SPEECH_WORKING[Math.floor(Math.random() * SPEECH_WORKING.length)], 3000, true);
+    longWorkingTimer = setTimeout(() => {
+      if (robotOverride === 'working') {
+        const patience = ["Still at it...", "Taking a minute.", "Patience...", "Almost probably."];
+        showSpeech(patience[Math.floor(Math.random() * patience.length)], 3000, true);
+      }
+    }, 45000);
   } else if (status === 'WaitingForInput' || status === 'NeedsPermission' || status === 'ClaudeNeedsInput') {
     robotOverride = 'waiting';
     clearTimeout(robotTimer);
@@ -3251,6 +3413,7 @@ function updateMascot(status, silent = false) {
     if (!silent) showSpeech(SPEECH_DONE[Math.floor(Math.random() * SPEECH_DONE.length)], 3000, true);
   } else {
     // Back to idle — resume autonomous behavior
+    clearTimeout(longWorkingTimer);
     if (robotOverride) {
       robotOverride = null;
       robotNext();
@@ -3287,6 +3450,9 @@ function setupMascotSpeech() {
   robotInit();
   startTipTimer();
   scheduleSpecialEvent();
+  scheduleHiccup();
+  setupCaughtWatching();
+  applyTimeOfDay();
 }
 
 let lastTipIndex = -1;
