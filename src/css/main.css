@@ -1649,6 +1649,9 @@ html, body {
   100% { transform: rotate(2deg); }
 }
 
+/* Hide permanent desk — only the sliding prop (special event) should appear */
+.robot-desk-layer { display: none; }
+
 /* --- Special event: broom sweep --- */
 .robot-broom-prop { display: none; }
 #footer-mascot.act-special-broom .robot-broom-prop { display: block; }
