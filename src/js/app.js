@@ -2213,7 +2213,7 @@ async function maybeNotify(session, status) {
       ClaudeNeedsInput: 'needs your input',
       ClaudeFinished: 'Claude is done',
     }[status];
-    if (friendlyStatus) showSpeech(`${session.name}: ${friendlyStatus}`, 4000);
+    if (friendlyStatus) showSpeech(`${session.name}: ${friendlyStatus}`, 4000, true);
   }
 
   // Only send native push notifications for Claude-specific events
@@ -2474,12 +2474,12 @@ const BOREDOM_WALK_QUIPS = ['Right. Going for a walk.', 'Stretching my legs.', '
 
 // Hold-to-secret
 const SECRET_REACTIONS = [
-  () => { robotEl.classList.add('act-dance'); showSpeech('You found me.', 4000); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
-  () => { robotEl.classList.add('act-wave'); showSpeech('This is between us.', 4000); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
-  () => { robotEl.classList.add('act-bounce'); showSpeech("I wasn't expecting that.", 4000); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
-  () => { robotEl.classList.add('act-think'); showSpeech("Nobody's ever held on that long before.", 5000); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 6000); },
-  () => { robotEl.classList.add('act-sleep'); showSpeech('Zzz...', 1200); robotTimer = setTimeout(() => { robotClearActivity(); showSpeech("I wasn't sleeping.", 3000); robotNext(); }, 2200); },
-  () => { robotEl.classList.add('act-stretch'); showSpeech('Okay fine, you caught me.', 4000); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+  () => { robotEl.classList.add('act-dance'); showSpeech('You found me.', 4000, true); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+  () => { robotEl.classList.add('act-wave'); showSpeech('This is between us.', 4000, true); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+  () => { robotEl.classList.add('act-bounce'); showSpeech("I wasn't expecting that.", 4000, true); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+  () => { robotEl.classList.add('act-think'); showSpeech("Nobody's ever held on that long before.", 5000, true); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 6000); },
+  () => { robotEl.classList.add('act-sleep'); showSpeech('Zzz...', 1200, true); robotTimer = setTimeout(() => { robotClearActivity(); showSpeech("I wasn't sleeping.", 3000, true); robotNext(); }, 2200); },
+  () => { robotEl.classList.add('act-stretch'); showSpeech('Okay fine, you caught me.', 4000, true); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
 ];
 let lastSecretIndex = -1;
 function triggerSecretReaction() {
@@ -2493,6 +2493,10 @@ function triggerSecretReaction() {
 
 // Theme reaction cooldown
 let themeReactionCooldown = 0;
+
+// Speech cooldown — non-priority speech is throttled to once per ~55s
+let lastSpeechTime = 0;
+const SPEECH_COOLDOWN_MS = 55000;
 
 function getFrequency() {
   return FREQUENCY_SETTINGS[localStorage.getItem('ps-robot-frequency') || 'medium'];
@@ -2594,7 +2598,7 @@ function robotInit() {
       const fallDuration = Math.min(2.2, 0.9 + currentBottom * 0.006);
       robotEl.style.transition = `bottom ${fallDuration}s cubic-bezier(0.33, 0, 0.66, 1)`;
       robotEl.style.bottom = '0px';
-      showSpeech(DROP_QUOTES[Math.floor(Math.random() * DROP_QUOTES.length)], 2500);
+      showSpeech(DROP_QUOTES[Math.floor(Math.random() * DROP_QUOTES.length)], 2500, true);
       setTimeout(() => {
         robotEl.style.transition = '';
         robotEl.classList.remove('act-falling');
@@ -2681,6 +2685,33 @@ function robotInit() {
     }
   });
 
+  // --- Eye tracking — eyes follow the cursor ---
+  let eyeRaf = null;
+  let eyeMouseX = 0, eyeMouseY = 0;
+  document.addEventListener('mousemove', (e) => {
+    eyeMouseX = e.clientX;
+    eyeMouseY = e.clientY;
+    if (eyeRaf) return;
+    eyeRaf = requestAnimationFrame(() => {
+      eyeRaf = null;
+      if (!robotEl || localStorage.getItem('ps-robot-enabled') === 'false') return;
+      const rect = robotEl.getBoundingClientRect();
+      const headCX = rect.left + rect.width * 0.5;
+      const headCY = rect.top + rect.height * 0.32; // eye level (~30% down the sprite)
+      const dx = eyeMouseX - headCX;
+      const dy = eyeMouseY - headCY;
+      const scaleX = 36 / rect.width;
+      const scaleY = 38 / rect.height;
+      const ox = Math.max(-1.3, Math.min(1.3, dx * scaleX * 0.12));
+      const oy = Math.max(-0.7, Math.min(0.7, dy * scaleY * 0.08));
+      const eyes = robotEl.querySelector('.robot-eyes');
+      // Only apply JS tracking when no CSS animation is using transform on the eyes
+      if (eyes && !robotEl.classList.contains('act-look') && !robotEl.classList.contains('act-code')) {
+        eyes.setAttribute('transform', `translate(${ox.toFixed(2)},${oy.toFixed(2)})`);
+      }
+    });
+  });
+
   // If window resizes and robot is off-screen, walk back into view
   window.addEventListener('resize', () => {
     if (!robotEl || !overlay) return;
@@ -2709,10 +2740,10 @@ function robotInit() {
 
   // Online / offline
   window.addEventListener('offline', () => {
-    if (robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') showSpeech('We lost the connection.', 4000);
+    if (robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') showSpeech('We lost the connection.', 4000, true);
   });
   window.addEventListener('online', () => {
-    if (robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') showSpeech('Back online.', 3000);
+    if (robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') showSpeech('Back online.', 3000, true);
   });
 
   // Window focus / blur — comment on long absences
@@ -2725,7 +2756,7 @@ function robotInit() {
     touchInteraction(); // reset boredom clock when user returns
     if (away > 5 * 60 * 1000 && robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') {
       const msgs = ['Welcome back.', 'Oh, you\'re back.', 'Miss me?', 'There you are.', 'I waited.'];
-      setTimeout(() => showSpeech(msgs[Math.floor(Math.random() * msgs.length)], 3500), 600);
+      setTimeout(() => showSpeech(msgs[Math.floor(Math.random() * msgs.length)], 3500, true), 600);
     }
   });
 
@@ -2736,7 +2767,7 @@ function robotInit() {
       const checkBattery = () => {
         if (!batteryAlertSent && battery.level < 0.2 && !battery.charging && robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') {
           batteryAlertSent = true;
-          showSpeech('Low battery. Save your work.', 5000);
+          showSpeech('Low battery. Save your work.', 5000, true);
         }
       };
       checkBattery();
@@ -2971,20 +3002,20 @@ function updateMascot(status, silent = false) {
     clearTimeout(robotTimer);
     robotClearActivity();
     robotEl.classList.add('working');
-    if (!silent) showSpeech(SPEECH_WORKING[Math.floor(Math.random() * SPEECH_WORKING.length)]);
+    if (!silent) showSpeech(SPEECH_WORKING[Math.floor(Math.random() * SPEECH_WORKING.length)], 3000, true);
   } else if (status === 'WaitingForInput' || status === 'NeedsPermission' || status === 'ClaudeNeedsInput') {
     robotOverride = 'waiting';
     clearTimeout(robotTimer);
     robotClearActivity();
     robotEl.classList.add('waiting', 'act-look');
     // Always speak for attention-needed statuses, even on tab switch
-    showSpeech(SPEECH_WAITING[Math.floor(Math.random() * SPEECH_WAITING.length)]);
+    showSpeech(SPEECH_WAITING[Math.floor(Math.random() * SPEECH_WAITING.length)], 3000, true);
   } else if (status === 'Exited') {
     robotOverride = 'exited';
     clearTimeout(robotTimer);
     robotClearActivity();
     robotEl.classList.add('exited');
-    if (!silent) showSpeech(SPEECH_DONE[Math.floor(Math.random() * SPEECH_DONE.length)]);
+    if (!silent) showSpeech(SPEECH_DONE[Math.floor(Math.random() * SPEECH_DONE.length)], 3000, true);
   } else {
     // Back to idle — resume autonomous behavior
     if (robotOverride) {
@@ -2998,9 +3029,12 @@ function triggerMascotBounce() {
   // no-op now, status changes handled by updateMascot
 }
 
-function showSpeech(text, duration = 3000) {
+function showSpeech(text, duration = 3000, priority = false) {
   const el = document.getElementById('mascot-speech');
   if (!el) return;
+  const now = Date.now();
+  if (!priority && now - lastSpeechTime < SPEECH_COOLDOWN_MS) return;
+  lastSpeechTime = now;
   el.textContent = text;
   el.style.left = '50%';
   el.style.transform = 'translateX(-50%)';
@@ -3093,16 +3127,16 @@ async function showWelcomeMessage() {
 
   // Build the welcome message
   if (timeGreeting) {
-    showSpeech(timeGreeting, 4000);
+    showSpeech(timeGreeting, 4000, true);
   } else if (dayGreeting) {
-    showSpeech(dayGreeting, 4000);
+    showSpeech(dayGreeting, 4000, true);
   } else if (hint) {
-    showSpeech(hint, 6000);
+    showSpeech(hint, 6000, true);
   } else if (projectName && projectName !== '~') {
-    showSpeech(`Welcome back to ${projectName}.`, 4000);
+    showSpeech(`Welcome back to ${projectName}.`, 4000, true);
   } else {
     const greetings = ['Ready to code.', 'Let\'s build something.', 'Standing by.', 'At your service.'];
-    showSpeech(greetings[Math.floor(Math.random() * greetings.length)], 4000);
+    showSpeech(greetings[Math.floor(Math.random() * greetings.length)], 4000, true);
   }
 }
 
