@@ -26,6 +26,14 @@ struct SocketCommand {
     tool: Option<String>,
     #[serde(default)]
     reason: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    ntype: Option<String>,
+    #[serde(default)]
+    last_msg: Option<String>,
+    #[serde(default)]
+    session: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -224,15 +232,16 @@ fn process_command(input: &str, app: &tauri::AppHandle) -> SocketResponse {
         }
 
         "hook-event" => {
-            let event_type = cmd.event.unwrap_or_default();
-            let tool_name = cmd.tool.unwrap_or_default();
-            let stop_reason = cmd.reason.unwrap_or_default();
             let _ = app.emit(
                 "claude-hook-event",
                 serde_json::json!({
-                    "event": event_type,
-                    "tool": tool_name,
-                    "reason": stop_reason,
+                    "event": cmd.event.unwrap_or_default(),
+                    "tool": cmd.tool.unwrap_or_default(),
+                    "message": cmd.message.unwrap_or_default(),
+                    "title": cmd.title.unwrap_or_default(),
+                    "ntype": cmd.ntype.unwrap_or_default(),
+                    "last_msg": cmd.last_msg.unwrap_or_default(),
+                    "session": cmd.session.unwrap_or_default(),
                 }),
             );
             SocketResponse {

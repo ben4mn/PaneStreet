@@ -3891,35 +3891,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Claude Code hook events — only fire desktop notifications when backgrounded
+  // Claude Code hook events — rich notifications from stdin JSON
   listen('claude-hook-event', (event) => {
-    const { event: eventType, tool, reason } = event.payload;
+    const { event: eventType, tool, message, title: hookTitle, ntype, last_msg } = event.payload;
 
-    // Build a specific message instead of raw event name
-    const friendlyMessages = {
-      Stop: 'Claude finished working',
-      SubagentStop: 'Claude agent finished',
-      Notification: tool ? `Claude: ${tool}` : 'Claude notification',
-    };
-    const msg = friendlyMessages[eventType] || eventType;
+    // Build specific notification based on event type and available data
+    let notifTitle = 'Claude Code';
+    let notifBody = '';
+    let mascotQuip = '';
+
+    if (eventType === 'Notification') {
+      // Use the actual message from Claude Code (e.g. "Claude needs your permission to use Bash")
+      if (ntype === 'permission_prompt') {
+        notifTitle = 'Permission needed';
+        notifBody = message || 'Claude needs your approval';
+        mascotQuip = tool ? `Claude wants to use ${tool}.` : 'Claude needs permission.';
+      } else if (ntype === 'idle_prompt') {
+        notifTitle = 'Input needed';
+        notifBody = message || 'Claude is waiting for input';
+        mascotQuip = 'Your turn.';
+      } else {
+        notifTitle = hookTitle || 'Claude Code';
+        notifBody = message || 'Notification from Claude';
+        mascotQuip = message ? message.slice(0, 50) : '';
+      }
+    } else if (eventType === 'Stop') {
+      notifTitle = 'Claude finished';
+      // Use last_assistant_message for a summary of what was done
+      if (last_msg) {
+        notifBody = last_msg.length > 120 ? last_msg.slice(0, 120) + '...' : last_msg;
+      } else {
+        notifBody = 'Task complete';
+      }
+      mascotQuip = 'Done.';
+    } else if (eventType === 'SubagentStop') {
+      notifTitle = 'Agent finished';
+      if (last_msg) {
+        notifBody = last_msg.length > 120 ? last_msg.slice(0, 120) + '...' : last_msg;
+      } else {
+        notifBody = 'Subagent complete';
+      }
+      mascotQuip = '';
+    } else {
+      notifTitle = eventType || 'Claude Code';
+      notifBody = message || tool || 'Event';
+    }
 
     // Always log to notification panel
-    addNotification('Claude Code', msg, -1);
+    addNotification(notifTitle, notifBody, -1);
 
     if (windowFocused) {
-      // App is open — mascot reacts subtly, no desktop notification
-      if (robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') {
-        if (eventType === 'Stop') {
-          showSpeech('Done.', 2000, true);
-        }
-        // Skip speech for other events when focused — user can see the status
+      // App is open — mascot reacts subtly for important events only
+      if (mascotQuip && robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') {
+        showSpeech(mascotQuip, 3000, true);
       }
     } else {
-      // App is backgrounded — send desktop notification
-      if (localStorage.getItem('ps-notifications') !== 'false') {
+      // App is backgrounded — send desktop notification (skip SubagentStop to avoid spam)
+      if (eventType !== 'SubagentStop' && localStorage.getItem('ps-notifications') !== 'false') {
         invoke('plugin:notification|is_permission_granted').then(granted => {
           if (granted) {
-            const options = { title: 'PaneStreet', body: msg };
+            const options = { title: notifTitle, body: notifBody };
             if (localStorage.getItem('ps-notify-sound') !== 'false') options.sound = 'default';
             invoke('plugin:notification|notify', { options });
           }

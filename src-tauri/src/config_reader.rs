@@ -456,11 +456,22 @@ fn ensure_notify_script() -> Result<String, String> {
     let script = format!(
         r#"#!/bin/bash
 {marker}
-# Sends Claude Code hook events to PaneStreet via Unix socket
-EVENT="${{CLAUDE_CODE_HOOK_EVENT_NAME:-unknown}}"
-TOOL="${{TOOL_NAME:-}}"
-REASON="${{STOP_REASON:-}}"
-echo '{{"cmd":"hook-event","event":"'"$EVENT"'","tool":"'"$TOOL"'","reason":"'"$REASON"'"}}' | nc -U "{sock}" -w 1 2>/dev/null || true
+# Sends Claude Code hook events to PaneStreet via Unix socket.
+# Claude Code passes hook data as JSON on stdin.
+INPUT=$(cat)
+# Extract fields with lightweight parsing (no jq dependency)
+EVENT=$(echo "$INPUT" | grep -o '"hook_event_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+TOOL=$(echo "$INPUT" | grep -o '"tool_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+MSG=$(echo "$INPUT" | grep -o '"message":"[^"]*"' | head -1 | cut -d'"' -f4)
+TITLE=$(echo "$INPUT" | grep -o '"title":"[^"]*"' | head -1 | cut -d'"' -f4)
+NTYPE=$(echo "$INPUT" | grep -o '"notification_type":"[^"]*"' | head -1 | cut -d'"' -f4)
+# Truncate last_assistant_message to 200 chars to keep socket payload small
+LAST_MSG=$(echo "$INPUT" | grep -o '"last_assistant_message":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-200)
+SESSION=$(echo "$INPUT" | grep -o '"session_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+# Send to PaneStreet socket
+printf '{{"cmd":"hook-event","event":"%s","tool":"%s","message":"%s","title":"%s","ntype":"%s","last_msg":"%s","session":"%s"}}\n' \
+  "${{EVENT:-unknown}}" "${{TOOL:-}}" "${{MSG:-}}" "${{TITLE:-}}" "${{NTYPE:-}}" "${{LAST_MSG:-}}" "${{SESSION:-}}" \
+  | nc -U "{sock}" -w 1 2>/dev/null || true
 "#,
         marker = HOOK_MARKER,
         sock = sock_path.display()
@@ -507,7 +518,7 @@ pub fn install_claude_hooks() -> Result<bool, String> {
     });
 
     // Install hooks for key events, preserving existing hooks
-    for event_name in &["Notification", "Stop", "SubagentStop"] {
+    for event_name in &["Notification", "Stop", "SubagentStop", "PreToolUse"] {
         let arr = hooks_obj.entry(event_name.to_string())
             .or_insert_with(|| Value::Array(Vec::new()));
         if let Some(arr) = arr.as_array_mut() {
