@@ -2888,39 +2888,39 @@ function robotInit() {
       clickCount = 0;
       clearTimeout(robotTimer);
       robotClearActivity();
-      // Exasperated tier
+      // Exasperated tier — always show (priority)
       const reactions = [
-        () => { showSpeech('I\'m filing a complaint.', 4000); robotWalk(); },
-        () => { showSpeech('Fine. You win.', 3000); robotWalk(); },
-        () => { showSpeech('I need a vacation.', 4000); robotEl.classList.add('act-sleep'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 8000); },
-        () => { showSpeech('I know a union guy.', 4000); robotWalk(); },
-        () => { showSpeech('I\'ve accepted my fate.', 4000); robotEl.classList.add('act-stand'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
-        () => { showSpeech('Fine. I\'m going to sleep.', 4000); robotEl.classList.add('act-sleep'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 10000); },
+        () => { showSpeech('I\'m filing a complaint.', 4000, true); robotWalk(); },
+        () => { showSpeech('Fine. You win.', 3000, true); robotWalk(); },
+        () => { showSpeech('I need a vacation.', 4000, true); robotEl.classList.add('act-sleep'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 8000); },
+        () => { showSpeech('I know a union guy.', 4000, true); robotWalk(); },
+        () => { showSpeech('I\'ve accepted my fate.', 4000, true); robotEl.classList.add('act-stand'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+        () => { showSpeech('Fine. I\'m going to sleep.', 4000, true); robotEl.classList.add('act-sleep'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 10000); },
       ];
       reactions[Math.floor(Math.random() * reactions.length)]();
     } else if (clickCount >= 5) {
       clearTimeout(robotTimer);
       robotClearActivity();
-      // Animated tier
+      // Animated tier — always show (priority)
       const reactions = [
-        () => { showSpeech('You\'re really going for it.', 3500); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
-        () => { showSpeech('I\'m not a button, you know.', 4000); robotEl.classList.add('act-bounce'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
-        () => { showSpeech('Careful. I bite.', 3000); robotEl.classList.add('act-look'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
-        () => { showSpeech('Okay, sure. Just click away.', 3500); robotDoActivity(); },
-        () => { showSpeech('I\'m logging this.', 3500); robotEl.classList.add('act-type'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('You\'re really going for it.', 3500, true); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+        () => { showSpeech('I\'m not a button, you know.', 4000, true); robotEl.classList.add('act-bounce'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('Careful. I bite.', 3000, true); robotEl.classList.add('act-look'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('Okay, sure. Just click away.', 3500, true); robotDoActivity(); },
+        () => { showSpeech('I\'m logging this.', 3500, true); robotEl.classList.add('act-type'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
       ];
       reactions[Math.floor(Math.random() * reactions.length)]();
     } else if (clickCount >= 3) {
       clearTimeout(robotTimer);
       robotClearActivity();
-      // Mild annoyance tier
+      // Mild annoyance tier — always show (priority)
       const reactions = [
-        () => { showSpeech('Hey, that tickles.', 3000); robotEl.classList.add('act-bounce'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
-        () => { showSpeech('I\'m working here.', 3000); robotEl.classList.add('act-type'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
-        () => { showSpeech('Personal space, please.', 3000); robotWalk(); },
-        () => { showSpeech('Alright, dance break I guess.', 4000); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
-        () => { showSpeech('Do you need something?', 3000); robotDoActivity(); },
-        () => { showSpeech('...', 2500); robotDoActivity(); },
+        () => { showSpeech('Hey, that tickles.', 3000, true); robotEl.classList.add('act-bounce'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('I\'m working here.', 3000, true); robotEl.classList.add('act-type'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 4000); },
+        () => { showSpeech('Personal space, please.', 3000, true); robotWalk(); },
+        () => { showSpeech('Alright, dance break I guess.', 4000, true); robotEl.classList.add('act-dance'); robotTimer = setTimeout(() => { robotClearActivity(); robotNext(); }, 5000); },
+        () => { showSpeech('Do you need something?', 3000, true); robotDoActivity(); },
+        () => { showSpeech('...', 2500, true); robotDoActivity(); },
       ];
       reactions[Math.floor(Math.random() * reactions.length)]();
     } else {
@@ -3502,6 +3502,9 @@ function startContextScanning() {
   contextScanTimer = setInterval(sampleTerminalContext, freq.contextInterval);
 }
 
+let lastMascotWorkingTime = 0;
+const MASCOT_WORKING_SPEECH_DEBOUNCE = 15000; // Don't repeat "Working" speech within 15s
+
 function updateMascot(status, silent = false) {
   if (!robotEl) return;
 
@@ -3515,7 +3518,12 @@ function updateMascot(status, silent = false) {
     clearTimeout(longWorkingTimer);
     robotClearActivity();
     robotEl.classList.add('working');
-    if (!silent) showSpeech(SPEECH_WORKING[Math.floor(Math.random() * SPEECH_WORKING.length)], 3000, true);
+    // Debounce Working speech — don't spam on rapid status toggles
+    const now = Date.now();
+    if (!silent && now - lastMascotWorkingTime > MASCOT_WORKING_SPEECH_DEBOUNCE) {
+      lastMascotWorkingTime = now;
+      showSpeech(SPEECH_WORKING[Math.floor(Math.random() * SPEECH_WORKING.length)], 3000, true);
+    }
     // After 10s of working, switch to relaxed watching-build posture
     watchingBuildTimer = setTimeout(() => {
       if (robotOverride === 'working' && robotEl) {
@@ -3558,6 +3566,8 @@ function triggerMascotBounce() {
 function showSpeech(text, duration = 3000, priority = false) {
   const el = document.getElementById('mascot-speech');
   if (!el) return;
+  // Never show speech when window is in the background
+  if (!windowFocused) return;
   const now = Date.now();
   if (!priority && now - lastSpeechTime < getSpeechCooldown()) return;
   if (!priority && !withinSpeechBudget()) return;
@@ -3881,20 +3891,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Claude Code hook events
+  // Claude Code hook events — only fire desktop notifications when backgrounded
   listen('claude-hook-event', (event) => {
     const { event: eventType, tool, reason } = event.payload;
-    const label = eventType || 'Claude hook';
-    addNotification('Claude Code', `${label}${tool ? ': ' + tool : ''}`, -1);
 
-    // Mascot reactions to hook events
-    if (robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') {
-      if (eventType === 'Stop') {
-        const quips = ['Claude\'s done.', 'Finished up.', 'All yours.', 'That\'s a wrap.'];
-        showSpeech(quips[Math.floor(Math.random() * quips.length)], 3000, true);
-      } else if (eventType === 'Notification') {
-        const quips = ['Heads up from Claude.', 'Claude says something.', 'Notification.'];
-        showSpeech(quips[Math.floor(Math.random() * quips.length)], 3000);
+    // Build a specific message instead of raw event name
+    const friendlyMessages = {
+      Stop: 'Claude finished working',
+      SubagentStop: 'Claude agent finished',
+      Notification: tool ? `Claude: ${tool}` : 'Claude notification',
+    };
+    const msg = friendlyMessages[eventType] || eventType;
+
+    // Always log to notification panel
+    addNotification('Claude Code', msg, -1);
+
+    if (windowFocused) {
+      // App is open — mascot reacts subtly, no desktop notification
+      if (robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') {
+        if (eventType === 'Stop') {
+          showSpeech('Done.', 2000, true);
+        }
+        // Skip speech for other events when focused — user can see the status
+      }
+    } else {
+      // App is backgrounded — send desktop notification
+      if (localStorage.getItem('ps-notifications') !== 'false') {
+        invoke('plugin:notification|is_permission_granted').then(granted => {
+          if (granted) {
+            const options = { title: 'PaneStreet', body: msg };
+            if (localStorage.getItem('ps-notify-sound') !== 'false') options.sound = 'default';
+            invoke('plugin:notification|notify', { options });
+          }
+        }).catch(() => {});
       }
     }
   });
