@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 const TRAILING_BUFFER_SIZE: usize = 1024;
-const IDLE_TIMEOUT: Duration = Duration::from_secs(3);
+const IDLE_TIMEOUT: Duration = Duration::from_secs(8);
 const IDLE_CHECK_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

@@ -570,6 +570,7 @@ html, body {
 #pane-grid.layout-maximized > .pane {
   border-radius: 0;
   border-width: 0;
+  box-shadow: none !important;
 }
 
 #pane-grid.layout-maximized .pane-edge {
@@ -666,6 +667,7 @@ html, body {
   min-height: 0;
   min-width: 0;
   position: relative;
+  transition: border-color 0.6s ease, box-shadow 0.6s ease;
 }
 
 .pane-body, .pane-header {
