@@ -25,6 +25,7 @@ pub struct ClaudeConfigSnapshot {
     pub mcp_servers: Vec<McpServerEntry>,
     pub global_memory: Option<String>,
     pub project_memory: Option<String>,
+    pub companion_name: Option<String>,
 }
 
 fn claude_dir() -> Option<PathBuf> {
@@ -161,12 +162,20 @@ pub fn read_claude_config(project_path: Option<String>) -> Result<ClaudeConfigSn
         None
     });
 
+    // Extract companion name from ~/.claude.json
+    let companion_name = claude_json_raw.as_ref()
+        .and_then(|v| v.get("companion"))
+        .and_then(|v| v.get("name"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
     Ok(ClaudeConfigSnapshot {
         settings_raw,
         plugins,
         mcp_servers,
         global_memory,
         project_memory,
+        companion_name,
     })
 }
 
@@ -420,6 +429,165 @@ pub fn read_scheduled_tasks() -> Result<ScheduledOverview, String> {
         sessions,
         scheduled_tasks,
     })
+}
+
+// --- Claude Code Hooks ---
+
+const HOOK_MARKER: &str = "# PaneStreet hook";
+
+fn pane_street_hooks_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".pane-street").join("hooks"))
+}
+
+fn notify_script_path() -> Option<PathBuf> {
+    pane_street_hooks_dir().map(|d| d.join("notify.sh"))
+}
+
+fn ensure_notify_script() -> Result<String, String> {
+    let dir = pane_street_hooks_dir().ok_or("Could not find home directory")?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create hooks dir: {}", e))?;
+
+    let script_path = dir.join("notify.sh");
+    let sock_path = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join(".pane-street")
+        .join("panestreet.sock");
+
+    let script = format!(
+        r#"#!/bin/bash
+{marker}
+# Sends Claude Code hook events to PaneStreet via Unix socket
+EVENT="${{CLAUDE_CODE_HOOK_EVENT_NAME:-unknown}}"
+TOOL="${{TOOL_NAME:-}}"
+REASON="${{STOP_REASON:-}}"
+echo '{{"cmd":"hook-event","event":"'"$EVENT"'","tool":"'"$TOOL"'","reason":"'"$REASON"'"}}' | nc -U "{sock}" -w 1 2>/dev/null || true
+"#,
+        marker = HOOK_MARKER,
+        sock = sock_path.display()
+    );
+
+    std::fs::write(&script_path, &script)
+        .map_err(|e| format!("Failed to write notify script: {}", e))?;
+
+    // Make executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755));
+    }
+
+    Ok(script_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn install_claude_hooks() -> Result<bool, String> {
+    let script_path = ensure_notify_script()?;
+
+    let claude = claude_dir().ok_or("Could not find home directory")?;
+    let settings_path = claude.join("settings.json");
+    let mut settings: serde_json::Map<String, Value> = if settings_path.exists() {
+        let content = std::fs::read_to_string(&settings_path)
+            .map_err(|e| format!("Failed to read settings: {}", e))?;
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        serde_json::Map::new()
+    };
+
+    let hooks = settings.entry("hooks".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    let hooks_obj = hooks.as_object_mut().ok_or("hooks is not an object")?;
+
+    let ps_hook = serde_json::json!({
+        "type": "command",
+        "command": format!("bash {}", script_path),
+        "description": "PaneStreet notification hook"
+    });
+
+    // Install hooks for key events, preserving existing hooks
+    for event_name in &["Notification", "Stop", "SubagentStop"] {
+        let arr = hooks_obj.entry(event_name.to_string())
+            .or_insert_with(|| Value::Array(Vec::new()));
+        if let Some(arr) = arr.as_array_mut() {
+            // Remove existing PaneStreet hooks first
+            arr.retain(|h| {
+                h.get("description").and_then(|d| d.as_str()) != Some("PaneStreet notification hook")
+            });
+            arr.push(ps_hook.clone());
+        }
+    }
+
+    let json_str = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+    std::fs::write(&settings_path, &json_str)
+        .map_err(|e| format!("Failed to write settings: {}", e))?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn uninstall_claude_hooks() -> Result<bool, String> {
+    let claude = claude_dir().ok_or("Could not find home directory")?;
+    let settings_path = claude.join("settings.json");
+
+    if !settings_path.exists() {
+        return Ok(false);
+    }
+
+    let content = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Failed to read settings: {}", e))?;
+    let mut settings: serde_json::Map<String, Value> =
+        serde_json::from_str(&content).unwrap_or_default();
+
+    if let Some(hooks) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) {
+        for (_event_name, arr) in hooks.iter_mut() {
+            if let Some(arr) = arr.as_array_mut() {
+                arr.retain(|h| {
+                    h.get("description").and_then(|d| d.as_str()) != Some("PaneStreet notification hook")
+                });
+            }
+        }
+    }
+
+    let json_str = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+    std::fs::write(&settings_path, &json_str)
+        .map_err(|e| format!("Failed to write settings: {}", e))?;
+
+    // Clean up notify script
+    if let Some(script) = notify_script_path() {
+        let _ = std::fs::remove_file(script);
+    }
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn check_hooks_installed() -> Result<bool, String> {
+    let claude = claude_dir().ok_or("Could not find home directory")?;
+    let settings_path = claude.join("settings.json");
+
+    if !settings_path.exists() {
+        return Ok(false);
+    }
+
+    let content = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Failed to read settings: {}", e))?;
+    let settings: Value = serde_json::from_str(&content).unwrap_or_default();
+
+    let installed = settings.get("hooks")
+        .and_then(|h| h.as_object())
+        .map(|hooks| {
+            hooks.values().any(|arr| {
+                arr.as_array().map(|a| {
+                    a.iter().any(|h| {
+                        h.get("description").and_then(|d| d.as_str()) == Some("PaneStreet notification hook")
+                    })
+                }).unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
+
+    Ok(installed)
 }
 
 // --- Session Persistence ---

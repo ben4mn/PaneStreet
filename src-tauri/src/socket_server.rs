@@ -20,6 +20,12 @@ struct SocketCommand {
     title: Option<String>,
     #[serde(default)]
     body: Option<String>,
+    #[serde(default)]
+    event: Option<String>,
+    #[serde(default)]
+    tool: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -209,6 +215,25 @@ fn process_command(input: &str, app: &tauri::AppHandle) -> SocketResponse {
             let _ = app.emit(
                 "socket-focus",
                 serde_json::json!({ "session_id": session_id }),
+            );
+            SocketResponse {
+                ok: true,
+                data: None,
+                error: None,
+            }
+        }
+
+        "hook-event" => {
+            let event_type = cmd.event.unwrap_or_default();
+            let tool_name = cmd.tool.unwrap_or_default();
+            let stop_reason = cmd.reason.unwrap_or_default();
+            let _ = app.emit(
+                "claude-hook-event",
+                serde_json::json!({
+                    "event": event_type,
+                    "tool": tool_name,
+                    "reason": stop_reason,
+                }),
             );
             SocketResponse {
                 ok: true,

@@ -14,6 +14,14 @@ let contextMenu = null;
 let layoutMode = 'freeform'; // 'auto' | 'freeform'
 let snapToGrid = true;
 let freeformZCounter = 1;
+const FREEFORM_Z_MAX = 900;
+
+function renormalizePaneZIndexes() {
+  const panes = sessions.filter(s => s.pane).map(s => ({ pane: s.pane, z: parseInt(s.pane.style.zIndex) || 0 }));
+  panes.sort((a, b) => a.z - b.z);
+  panes.forEach((p, i) => { p.pane.style.zIndex = i + 1; });
+  freeformZCounter = panes.length + 1;
+}
 const SNAP_INCREMENT = 20;
 const PANE_MIN_WIDTH = 200;
 const PANE_MIN_HEIGHT = 120;
@@ -738,6 +746,7 @@ function setupFreeformResize() {
       neighbors: findAdjacentPanes(session, dir),
     };
 
+    if (freeformZCounter >= FREEFORM_Z_MAX) renormalizePaneZIndexes();
     freeformZCounter++;
     pane.style.zIndex = freeformZCounter;
   });
@@ -840,6 +849,7 @@ function setFocus(index) {
 
   // Z-index management in freeform mode
   if (layoutMode === 'freeform') {
+    if (freeformZCounter >= FREEFORM_Z_MAX) renormalizePaneZIndexes();
     freeformZCounter++;
     sessions[index].pane.style.zIndex = freeformZCounter;
   }
@@ -1046,6 +1056,8 @@ async function createSession(restoreCwd, restoreScrollback) {
 
   // Watch for /rename command output from Claude Code
   terminal.onOutput((chunk, buffer) => {
+    // Track output velocity for mascot impressed reaction
+    trackOutputVelocity(chunk.length);
     // Claude Code /rename outputs "Session renamed to: <name>" with ANSI styling
     const clean = buffer.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
     const renameMatch = clean.match(/(?:Renamed (?:conversation )?to|Session renamed to)[:\s]+["']?([^\n"']+?)["']?\s*$/);
@@ -1565,6 +1577,17 @@ function showContextMenu(x, y, sessionIndex) {
   contextMenu.style.left = `${x}px`;
   contextMenu.style.top = `${y}px`;
   document.body.appendChild(contextMenu);
+
+  // Clamp menu within viewport bounds
+  requestAnimationFrame(() => {
+    const rect = contextMenu.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 8) {
+      contextMenu.style.left = `${window.innerWidth - rect.width - 8}px`;
+    }
+    if (rect.bottom > window.innerHeight - 8) {
+      contextMenu.style.top = `${window.innerHeight - rect.height - 8}px`;
+    }
+  });
 
   contextMenu.addEventListener('click', (e) => {
     const action = e.target.dataset.action;
@@ -2291,6 +2314,11 @@ function setupStatusListener() {
 
     const previousStatus = session.status || 'Idle';
     session.status = status;
+
+    // Track command milestones (Idle→Working = command executed)
+    if (previousStatus === 'Idle' && status === 'Working') {
+      incrementCommandCount();
+    }
     const color = STATUS_COLORS[status] || 'var(--status-idle)';
 
     // Update pane header dot + border
@@ -2408,6 +2436,9 @@ async function checkForUpdateOnStartup() {
 
 // --- Robot Mascot (JS state machine) ---
 
+const MASCOT_NAME = 'Pane';
+let claudeCompanionName = null; // detected from ~/.claude.json companion config
+
 const ACTIVITIES = [
   { name: 'stand',   cls: 'act-stand',   duration: [20, 40] },
   { name: 'look',    cls: 'act-look',    duration: [8, 14] },
@@ -2475,14 +2506,62 @@ const CONTEXTUAL_QUIPS = [
   { patterns: [/claude |Claude /], quips: ['Let Claude cook.', 'AI at work.', 'Claude\'s on it.'] },
   { patterns: [/warning|Warning/], quips: ['Heads up.', 'Worth a look.', 'A warning or two.'] },
   { patterns: [/fatal|FATAL|killed|Killed/i], quips: ['Yikes.', 'That\'s not great.', 'F.'] },
+  // File types
+  { patterns: [/\.pdf\b|\.PDF\b/], quips: ['How\'s that document going?', 'Paperwork, huh.', 'PDF life.'] },
+  { patterns: [/\.docx?\b|\.doc\b|word/i], quips: ['Document time.', 'The fun stuff.', 'Writing mode.'] },
+  { patterns: [/\.xlsx?\b|\.csv\b|spreadsheet/i], quips: ['Spreadsheets.', 'Number crunching.', 'Data stuff.'] },
+  { patterns: [/\.pptx?\b|presentation|slides/i], quips: ['Presentation mode.', 'Slide deck.', 'Show time.'] },
+  // Tools & services
+  { patterns: [/jira|JIRA|linear\.app/i], quips: ['Ticket time.', 'Tracking it.', 'Sprint work.'] },
+  { patterns: [/confluence|wiki/i], quips: ['Documentation day.', 'Wiki update?', 'Writing it down.'] },
+  { patterns: [/slack|Slack/], quips: ['Message incoming.', 'Slack break?', 'Chat time.'] },
+  { patterns: [/github\.com|pull request|\.pr\b/i], quips: ['PR time.', 'Code review.', 'Shipping it.'] },
+  // Cloud & infra
+  { patterns: [/aws |s3 |lambda|cloudformation/i], quips: ['Cloud stuff.', 'AWS time.', 'Infrastructure.'] },
+  { patterns: [/kubectl|kubernetes|k8s/i], quips: ['Orchestrating.', 'Pods and services.', 'K8s life.'] },
+  { patterns: [/terraform|tf plan|tf apply/i], quips: ['Infra as code.', 'Planning changes.', 'Provisioning.'] },
+  { patterns: [/vercel|netlify|cloudflare/i], quips: ['Deploying.', 'Edge stuff.', 'Going live.'] },
 ];
 
-// Animation frequency settings: [idlePauseMin, idlePauseMax, contextInterval, walkChance]
+// Animation frequency settings
 const FREQUENCY_SETTINGS = {
-  low:    { idleMin: 200, idleMax: 300, contextInterval: 60000, walkChance: 0.1 },
-  medium: { idleMin: 40,  idleMax: 70,  contextInterval: 35000, walkChance: 0.45 },
-  high:   { idleMin: 30,  idleMax: 60,  contextInterval: 20000, walkChance: 0.3 },
+  low:    { idleMin: 200, idleMax: 300, contextInterval: 60000, walkChance: 0.1,  speechCooldown: 120000, speechBudget: 2, actSpeechChance: 0.2, boredQuipChance: 0.08, tipInterval: [8, 12] },
+  medium: { idleMin: 55,  idleMax: 100, contextInterval: 55000, walkChance: 0.35, speechCooldown: 80000,  speechBudget: 4, actSpeechChance: 0.4, boredQuipChance: 0.15, tipInterval: [5, 8] },
+  high:   { idleMin: 30,  idleMax: 60,  contextInterval: 20000, walkChance: 0.3,  speechCooldown: 40000,  speechBudget: 8, actSpeechChance: 1.0, boredQuipChance: 0.3,  tipInterval: [3, 5] },
 };
+
+// Speech budget tracking (rolling 5-minute window)
+const SPEECH_BUDGET_WINDOW = 5 * 60 * 1000;
+let speechTimestamps = [];
+
+// Delight: output velocity tracking for impressed look
+let outputByteCount = 0;
+let outputVelocityTimer = null;
+let watchingBuildTimer = null;
+let commandMilestoneCount = parseInt(localStorage.getItem('ps-command-count') || '0');
+
+function trackOutputVelocity(byteLength) {
+  outputByteCount += byteLength;
+}
+function startOutputVelocityCheck() {
+  if (outputVelocityTimer) return;
+  outputVelocityTimer = setInterval(() => {
+    if (robotEl && outputByteCount > 8000 && !robotEl.classList.contains('impressed')) {
+      robotEl.classList.add('impressed');
+      setTimeout(() => robotEl.classList.remove('impressed'), 2000);
+    }
+    outputByteCount = 0;
+  }, 500);
+}
+function incrementCommandCount() {
+  commandMilestoneCount++;
+  localStorage.setItem('ps-command-count', commandMilestoneCount);
+  // Silent dance at milestones
+  if ([100, 500, 1000, 2500, 5000].includes(commandMilestoneCount) && robotEl) {
+    robotEl.classList.add('act-dance');
+    setTimeout(() => robotEl.classList.remove('act-dance'), 4000);
+  }
+}
 
 let robotEl = null;
 let robotTimer = null;
@@ -2614,9 +2693,21 @@ function applyTimeOfDay() {
 // Theme reaction cooldown
 let themeReactionCooldown = 0;
 
-// Speech cooldown — non-priority speech is throttled to once per ~55s
+// Speech cooldown — frequency-dependent
 let lastSpeechTime = 0;
-const SPEECH_COOLDOWN_MS = 55000;
+function getSpeechCooldown() {
+  const freq = localStorage.getItem('ps-robot-frequency') || 'medium';
+  return (FREQUENCY_SETTINGS[freq] || FREQUENCY_SETTINGS.medium).speechCooldown;
+}
+function getSpeechBudget() {
+  const freq = localStorage.getItem('ps-robot-frequency') || 'medium';
+  return (FREQUENCY_SETTINGS[freq] || FREQUENCY_SETTINGS.medium).speechBudget;
+}
+function withinSpeechBudget() {
+  const now = Date.now();
+  speechTimestamps = speechTimestamps.filter(t => now - t < SPEECH_BUDGET_WINDOW);
+  return speechTimestamps.length < getSpeechBudget();
+}
 
 function getFrequency() {
   return FREQUENCY_SETTINGS[localStorage.getItem('ps-robot-frequency') || 'medium'];
@@ -3286,11 +3377,15 @@ function robotDoActivity() {
   robotEl.classList.add(act.cls);
 
   if (act.speech) {
-    showSpeech(act.speech);
+    const freq = localStorage.getItem('ps-robot-frequency') || 'medium';
+    const chance = (FREQUENCY_SETTINGS[freq] || FREQUENCY_SETTINGS.medium).actSpeechChance;
+    if (Math.random() < chance) showSpeech(act.speech);
   }
 
   // Occasional boredom quip while doing a boring activity
-  if (boredLevel >= 1 && boringNames.includes(act.name) && Math.random() < 0.3) {
+  const freq = localStorage.getItem('ps-robot-frequency') || 'medium';
+  const boredChance = (FREQUENCY_SETTINGS[freq] || FREQUENCY_SETTINGS.medium).boredQuipChance;
+  if (boredLevel >= 1 && boringNames.includes(act.name) && Math.random() < boredChance) {
     setTimeout(() => {
       if (!robotOverride) showSpeech(BOREDOM_IDLE_QUIPS[Math.floor(Math.random() * BOREDOM_IDLE_QUIPS.length)], 3000);
     }, (dur * 0.5) * 1000);
@@ -3334,8 +3429,8 @@ function sampleTerminalContext() {
   if (!session?.terminal?._outputBuffer) return;
 
   const buffer = session.terminal._outputBuffer;
-  // Only look at the last 300 chars (recent output)
-  const tail = buffer.slice(-300);
+  // Only look at the last 500 chars (recent output)
+  const tail = buffer.slice(-500);
 
   for (const entry of CONTEXTUAL_QUIPS) {
     for (const pattern of entry.patterns) {
@@ -3364,6 +3459,31 @@ function sampleTerminalContext() {
     return;
   }
 
+  // Companion interaction — if Claude Code buddy is detected and Claude is active
+  if (claudeCompanionName && Math.random() < 0.08) {
+    const hasClaudeSession = sessions.some(s => s.status === 'Working' || s.wasClaude);
+    if (hasClaudeSession) {
+      const name = claudeCompanionName;
+      const companionQuips = [
+        `Tell ${name} I said hi.`,
+        `*waves at ${name}*`,
+        `${name}'s keeping you company too, huh.`,
+        `Say hi to ${name} for me.`,
+        `How's ${name} doing?`,
+        `${name} and I — we make a good team.`,
+        `*nods at ${name}*`,
+      ];
+      const q = companionQuips[Math.floor(Math.random() * companionQuips.length)];
+      if (q !== lastContextQuip) {
+        lastContextQuip = q;
+        robotEl.classList.add('act-wave');
+        setTimeout(() => robotEl.classList.remove('act-wave'), 3000);
+        showSpeech(q, 4000);
+        return;
+      }
+    }
+  }
+
   // Long idle — suggest a break
   const idleSessions = sessions.filter(s => s.status === 'Idle').length;
   if (idleSessions === sessions.length && sessions.length > 0 && Math.random() < 0.15) {
@@ -3383,7 +3503,8 @@ function updateMascot(status, silent = false) {
   if (!robotEl) return;
 
   // Clear previous override
-  robotEl.classList.remove('working', 'waiting', 'exited');
+  robotEl.classList.remove('working', 'waiting', 'exited', 'watching-build');
+  clearTimeout(watchingBuildTimer);
 
   if (status === 'Working') {
     robotOverride = 'working';
@@ -3392,6 +3513,12 @@ function updateMascot(status, silent = false) {
     robotClearActivity();
     robotEl.classList.add('working');
     if (!silent) showSpeech(SPEECH_WORKING[Math.floor(Math.random() * SPEECH_WORKING.length)], 3000, true);
+    // After 10s of working, switch to relaxed watching-build posture
+    watchingBuildTimer = setTimeout(() => {
+      if (robotOverride === 'working' && robotEl) {
+        robotEl.classList.add('watching-build');
+      }
+    }, 10000);
     longWorkingTimer = setTimeout(() => {
       if (robotOverride === 'working') {
         const patience = ["Still at it...", "Taking a minute.", "Patience...", "Almost probably."];
@@ -3429,8 +3556,10 @@ function showSpeech(text, duration = 3000, priority = false) {
   const el = document.getElementById('mascot-speech');
   if (!el) return;
   const now = Date.now();
-  if (!priority && now - lastSpeechTime < SPEECH_COOLDOWN_MS) return;
+  if (!priority && now - lastSpeechTime < getSpeechCooldown()) return;
+  if (!priority && !withinSpeechBudget()) return;
   lastSpeechTime = now;
+  speechTimestamps.push(now);
   el.textContent = text;
   el.style.left = '50%';
   el.style.transform = 'translateX(-50%)';
@@ -3453,14 +3582,16 @@ function setupMascotSpeech() {
   scheduleHiccup();
   setupCaughtWatching();
   applyTimeOfDay();
+  startOutputVelocityCheck();
 }
 
 let lastTipIndex = -1;
 
 function startTipTimer() {
-  // Show a tip every 3-5 minutes
   function scheduleTip() {
-    const delay = (3 + Math.random() * 2) * 60 * 1000; // 3-5 min
+    const freq = localStorage.getItem('ps-robot-frequency') || 'medium';
+    const [minMin, maxMin] = (FREQUENCY_SETTINGS[freq] || FREQUENCY_SETTINGS.medium).tipInterval;
+    const delay = (minMin + Math.random() * (maxMin - minMin)) * 60 * 1000;
     setTimeout(() => {
       if (localStorage.getItem('ps-robot-enabled') === 'false') {
         scheduleTip();
@@ -3497,11 +3628,14 @@ async function showWelcomeMessage() {
     const parts = cwd.replace(/\/$/, '').split('/');
     projectName = parts[parts.length - 1];
 
-    // Try to read Claude memories for this project
+    // Try to read Claude memories and companion config for this project
     try {
       const config = await invoke('read_claude_config', { projectPath: cwd });
       if (config.project_memory) {
         hint = extractHint(config.project_memory, projectName);
+      }
+      if (config.companion_name) {
+        claudeCompanionName = config.companion_name;
       }
     } catch {}
   }
@@ -3744,6 +3878,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // Claude Code hook events
+  listen('claude-hook-event', (event) => {
+    const { event: eventType, tool, reason } = event.payload;
+    const label = eventType || 'Claude hook';
+    addNotification('Claude Code', `${label}${tool ? ': ' + tool : ''}`, -1);
+
+    // Mascot reactions to hook events
+    if (robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') {
+      if (eventType === 'Stop') {
+        const quips = ['Claude\'s done.', 'Finished up.', 'All yours.', 'That\'s a wrap.'];
+        showSpeech(quips[Math.floor(Math.random() * quips.length)], 3000, true);
+      } else if (eventType === 'Notification') {
+        const quips = ['Heads up from Claude.', 'Claude says something.', 'Notification.'];
+        showSpeech(quips[Math.floor(Math.random() * quips.length)], 3000);
+      }
+    }
+  });
+
   // Window drag via Tauri startDragging — skip interactive elements only
   document.getElementById('toolbar').addEventListener('mousedown', (e) => {
     if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select') || e.target.closest('a')) return;
@@ -3852,6 +4004,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Welcome message after a brief delay (let CWD resolve)
   setTimeout(() => showWelcomeMessage(), 1500);
+
+  // Auto-install Claude Code hooks if not already installed (with opt-out)
+  setTimeout(async () => {
+    if (localStorage.getItem('ps-hooks-optout') === 'true') return;
+    try {
+      const installed = await invoke('check_hooks_installed');
+      if (!installed) {
+        await invoke('install_claude_hooks');
+        // Show a non-intrusive toast notification
+        addNotification('PaneStreet', 'Installed Claude Code hooks. Disable in Settings.', -1);
+      }
+    } catch (err) {
+      console.warn('Hook auto-install check failed:', err);
+    }
+  }, 2000);
 
   // Check for updates on startup (non-blocking, dismissible)
   setTimeout(() => checkForUpdateOnStartup(), 3000);

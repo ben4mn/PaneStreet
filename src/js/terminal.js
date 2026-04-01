@@ -45,6 +45,8 @@ export class TerminalSession {
     this.onOutputCallback = null;
     this._outputBuffer = '';
 
+    this._textDecoder = new TextDecoder('utf-8', { fatal: false });
+
     this.term = new Terminal({
       cursorBlink: true,
       fontSize: parseInt(localStorage.getItem('ps-font-size') || '14'),
@@ -208,7 +210,7 @@ export class TerminalSession {
       // Scan output for patterns (e.g., /rename command)
       if (this.onOutputCallback) {
         try {
-          const text = new TextDecoder().decode(bytes);
+          const text = this._textDecoder.decode(bytes, { stream: true });
           this._outputBuffer += text;
           // Keep buffer manageable
           if (this._outputBuffer.length > 2000) {

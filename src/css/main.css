@@ -1936,6 +1936,52 @@ html, body {
   transition: right 0.8s cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
+/* --- Idle breathing — subtle life when standing still --- */
+@keyframes mascot-breathe {
+  0%, 100% { transform: scaleY(1); }
+  50%      { transform: scaleY(1.015) translateY(-0.3px); }
+}
+#footer-mascot.act-stand .robot-body,
+#footer-mascot:not(.walking):not([class*="act-"]) .robot-body {
+  animation: mascot-breathe 4s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+/* --- Impressed look — wide eyes when output scrolls fast --- */
+#footer-mascot.impressed .robot-eye-l,
+#footer-mascot.impressed .robot-eye-r {
+  animation: impressed-eyes 2s ease-out forwards;
+}
+@keyframes impressed-eyes {
+  0%, 10% { transform: scaleY(1.35); }
+  100%    { transform: scaleY(1); }
+}
+
+/* --- Watching build posture — relaxed lean during long Working status --- */
+@keyframes watching-build {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  50%      { transform: rotate(2deg) translateY(0.5px); }
+}
+#footer-mascot.watching-build .robot-body {
+  animation: watching-build 3s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+#footer-mascot.watching-build .robot-eye-l,
+#footer-mascot.watching-build .robot-eye-r {
+  transform: scaleY(0.5);
+  transition: transform 0.5s ease;
+}
+
+/* --- Head bob during code/type activities --- */
+@keyframes head-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-0.8px); }
+}
+#footer-mascot.act-code .robot-head,
+#footer-mascot.act-type .robot-head {
+  animation: head-bob 2s ease-in-out infinite;
+}
+
 /* Speech bubble */
 .mascot-speech {
   position: absolute;

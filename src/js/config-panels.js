@@ -409,6 +409,17 @@ async function renderSettingsTab(tab) {
               <option value="high" ${robotFrequency === 'high' ? 'selected' : ''}>High</option>
             </select>
           </div>
+
+          <div class="setting-row-inline" style="padding-top:8px">
+            <div>
+              <div class="setting-label">Claude Code hooks</div>
+              <div class="setting-description">Auto-install hooks so Pane reacts to Claude Code events</div>
+            </div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-hooks" ${localStorage.getItem('ps-hooks-optout') !== 'true' ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -471,6 +482,15 @@ async function renderSettingsTab(tab) {
       const robotChecked = container.querySelector('#pref-robot').checked;
       localStorage.setItem('ps-robot-enabled', robotChecked);
       localStorage.setItem('ps-robot-frequency', container.querySelector('#pref-robot-frequency').value);
+      // Claude Code hooks toggle
+      const hooksEnabled = container.querySelector('#pref-hooks').checked;
+      if (hooksEnabled) {
+        localStorage.removeItem('ps-hooks-optout');
+        invoke('install_claude_hooks').catch(() => {});
+      } else {
+        localStorage.setItem('ps-hooks-optout', 'true');
+        invoke('uninstall_claude_hooks').catch(() => {});
+      }
       window.dispatchEvent(new CustomEvent('robot-toggle', { detail: robotChecked }));
       window.dispatchEvent(new CustomEvent('settings-changed', {
         detail: { fontSize: parseInt(rangeEl.value) }
