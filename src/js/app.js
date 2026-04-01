@@ -2878,11 +2878,11 @@ function robotInit() {
     const rect = robotEl.getBoundingClientRect();
     const dx = e.clientX - (rect.left + rect.width / 2);
     const dy = e.clientY - (rect.top + rect.height / 2);
-    if (Math.abs(dx) > 40 || Math.abs(dy) > 50) return;
+    if (Math.abs(dx) > 30 || Math.abs(dy) > 40) return; // Tighter hitbox to reduce accidental triggers
 
     clickCount++;
     clearTimeout(clickResetTimer);
-    clickResetTimer = setTimeout(() => { clickCount = 0; }, 1500);
+    clickResetTimer = setTimeout(() => { clickCount = 0; }, 1200); // Shorter window for multi-click detection
 
     if (clickCount >= 8) {
       clickCount = 0;
@@ -2924,7 +2924,10 @@ function robotInit() {
       ];
       reactions[Math.floor(Math.random() * reactions.length)]();
     } else {
-      showSpeech(SPEECH_CLICK[Math.floor(Math.random() * SPEECH_CLICK.length)]);
+      // Single click — only respond ~30% of the time to avoid being annoying
+      if (Math.random() < 0.3) {
+        showSpeech(SPEECH_CLICK[Math.floor(Math.random() * SPEECH_CLICK.length)]);
+      }
     }
   });
 

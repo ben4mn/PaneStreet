@@ -497,10 +497,13 @@ pub fn install_claude_hooks() -> Result<bool, String> {
         .or_insert_with(|| Value::Object(serde_json::Map::new()));
     let hooks_obj = hooks.as_object_mut().ok_or("hooks is not an object")?;
 
-    let ps_hook = serde_json::json!({
-        "type": "command",
-        "command": format!("bash {}", script_path),
-        "description": "PaneStreet notification hook"
+    // Claude Code hook format: { "matcher": "", "hooks": [{ "type": "command", "command": "..." }] }
+    let ps_hook_entry = serde_json::json!({
+        "matcher": "",
+        "hooks": [{
+            "type": "command",
+            "command": format!("bash {}", script_path),
+        }]
     });
 
     // Install hooks for key events, preserving existing hooks
@@ -510,9 +513,18 @@ pub fn install_claude_hooks() -> Result<bool, String> {
         if let Some(arr) = arr.as_array_mut() {
             // Remove existing PaneStreet hooks first
             arr.retain(|h| {
-                h.get("description").and_then(|d| d.as_str()) != Some("PaneStreet notification hook")
+                // Match by command containing pane-street
+                let is_ps = h.get("hooks")
+                    .and_then(|hs| hs.as_array())
+                    .map(|hs| hs.iter().any(|hook| {
+                        hook.get("command").and_then(|c| c.as_str())
+                            .map(|c| c.contains("pane-street"))
+                            .unwrap_or(false)
+                    }))
+                    .unwrap_or(false);
+                !is_ps
             });
-            arr.push(ps_hook.clone());
+            arr.push(ps_hook_entry.clone());
         }
     }
 
@@ -542,7 +554,15 @@ pub fn uninstall_claude_hooks() -> Result<bool, String> {
         for (_event_name, arr) in hooks.iter_mut() {
             if let Some(arr) = arr.as_array_mut() {
                 arr.retain(|h| {
-                    h.get("description").and_then(|d| d.as_str()) != Some("PaneStreet notification hook")
+                    let is_ps = h.get("hooks")
+                        .and_then(|hs| hs.as_array())
+                        .map(|hs| hs.iter().any(|hook| {
+                            hook.get("command").and_then(|c| c.as_str())
+                                .map(|c| c.contains("pane-street"))
+                                .unwrap_or(false)
+                        }))
+                        .unwrap_or(false);
+                    !is_ps
                 });
             }
         }
@@ -579,8 +599,15 @@ pub fn check_hooks_installed() -> Result<bool, String> {
         .map(|hooks| {
             hooks.values().any(|arr| {
                 arr.as_array().map(|a| {
-                    a.iter().any(|h| {
-                        h.get("description").and_then(|d| d.as_str()) == Some("PaneStreet notification hook")
+                    a.iter().any(|entry| {
+                        entry.get("hooks")
+                            .and_then(|hs| hs.as_array())
+                            .map(|hs| hs.iter().any(|hook| {
+                                hook.get("command").and_then(|c| c.as_str())
+                                    .map(|c| c.contains("pane-street"))
+                                    .unwrap_or(false)
+                            }))
+                            .unwrap_or(false)
                     })
                 }).unwrap_or(false)
             })
