@@ -518,7 +518,7 @@ pub fn install_claude_hooks() -> Result<bool, String> {
     });
 
     // Install hooks for key events, preserving existing hooks
-    for event_name in &["Notification", "Stop", "SubagentStop", "PreToolUse"] {
+    for event_name in &["Notification", "Stop", "SubagentStop"] {
         let arr = hooks_obj.entry(event_name.to_string())
             .or_insert_with(|| Value::Array(Vec::new()));
         if let Some(arr) = arr.as_array_mut() {

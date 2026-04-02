@@ -3932,12 +3932,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         notifBody = 'Subagent complete';
       }
       mascotQuip = '';
+    } else if (eventType === 'PreToolUse') {
+      // PreToolUse fires on every tool call — too noisy for notifications.
+      // Just silently update mascot awareness, don't add to panel.
+      return;
     } else {
       notifTitle = eventType || 'Claude Code';
       notifBody = message || tool || 'Event';
     }
 
-    // Always log to notification panel
+    // Log to notification panel
     addNotification(notifTitle, notifBody, -1);
 
     if (windowFocused) {
