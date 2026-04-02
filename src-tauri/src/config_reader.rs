@@ -457,7 +457,8 @@ fn ensure_notify_script() -> Result<String, String> {
         r#"#!/bin/bash
 {marker}
 # Sends Claude Code hook events to PaneStreet via Unix socket.
-# Claude Code passes hook data as JSON on stdin.
+# Only fires for sessions running inside PaneStreet (PANESTREET=1 env var).
+[ -z "$PANESTREET" ] && cat > /dev/null && exit 0
 INPUT=$(cat)
 # Extract fields with lightweight parsing (no jq dependency)
 EVENT=$(echo "$INPUT" | grep -o '"hook_event_name":"[^"]*"' | head -1 | cut -d'"' -f4)

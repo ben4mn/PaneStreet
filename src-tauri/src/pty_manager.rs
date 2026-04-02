@@ -60,6 +60,7 @@ pub fn spawn_pty(
     let mut cmd = CommandBuilder::new(&shell);
     cmd.arg("-l"); // Login shell for proper env
     cmd.env("TERM", "xterm-256color");
+    cmd.env("PANESTREET", "1");
 
     if let Some(dir) = cwd {
         cmd.cwd(dir);
