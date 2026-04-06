@@ -114,9 +114,10 @@ function captureSettingsSnapshot() {
     gitShowDirty: localStorage.getItem('ps-git-show-dirty') ?? 'true',
     gitPoll: localStorage.getItem('ps-git-poll') || '5',
     notifications: localStorage.getItem('ps-notifications') ?? 'true',
-    notifyWaiting: localStorage.getItem('ps-notify-waiting') ?? 'true',
+    notifyClaudeInput: localStorage.getItem('ps-notify-claude-input') ?? 'true',
+    notifyClaudeFinished: localStorage.getItem('ps-notify-claude-finished') ?? 'true',
     notifyPermission: localStorage.getItem('ps-notify-permission') ?? 'true',
-    notifyExited: localStorage.getItem('ps-notify-exited') ?? 'true',
+    notifyAgent: localStorage.getItem('ps-notify-agent') ?? 'true',
     notifySound: localStorage.getItem('ps-notify-sound') ?? 'true',
     robotEnabled: localStorage.getItem('ps-robot-enabled') ?? 'true',
     robotFrequency: localStorage.getItem('ps-robot-frequency') || 'medium',
@@ -135,6 +136,10 @@ function checkSettingsDirty() {
     gitShowDirty: String(container.querySelector('#pref-git-dirty')?.checked ?? true),
     gitPoll: container.querySelector('#pref-git-poll')?.value || '5',
     notifications: String(container.querySelector('#pref-notifications')?.checked ?? true),
+    notifyClaudeInput: String(container.querySelector('#pref-notify-claude-input')?.checked ?? true),
+    notifyClaudeFinished: String(container.querySelector('#pref-notify-claude-finished')?.checked ?? true),
+    notifyPermission: String(container.querySelector('#pref-notify-permission')?.checked ?? true),
+    notifyAgent: String(container.querySelector('#pref-notify-agent')?.checked ?? true),
     notifySound: String(container.querySelector('#pref-notify-sound')?.checked ?? true),
     robotEnabled: String(container.querySelector('#pref-robot')?.checked ?? true),
     robotFrequency: container.querySelector('#pref-robot-frequency')?.value || 'medium',
@@ -239,6 +244,8 @@ async function renderSettingsTab(tab) {
     const notificationsEnabled = localStorage.getItem('ps-notifications') !== 'false';
     const notifyOnClaudeInput = localStorage.getItem('ps-notify-claude-input') !== 'false';
     const notifyOnClaudeFinished = localStorage.getItem('ps-notify-claude-finished') !== 'false';
+    const notifyOnPermission = localStorage.getItem('ps-notify-permission') !== 'false';
+    const notifyOnAgent = localStorage.getItem('ps-notify-agent') !== 'false';
     const notifySound = localStorage.getItem('ps-notify-sound') !== 'false';
     const robotEnabled = localStorage.getItem('ps-robot-enabled') !== 'false';
     const robotFrequency = localStorage.getItem('ps-robot-frequency') || 'medium';
@@ -362,6 +369,22 @@ async function renderSettingsTab(tab) {
             </label>
           </div>
 
+          <div class="setting-row-inline" style="padding:4px 0">
+            <div class="setting-label">Permission prompts</div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-notify-permission" ${notifyOnPermission ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row-inline" style="padding:4px 0">
+            <div class="setting-label">Agent completions</div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-notify-agent" ${notifyOnAgent ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+
           <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px">
             <div class="setting-row-inline">
               <div>
@@ -478,6 +501,8 @@ async function renderSettingsTab(tab) {
       localStorage.setItem('ps-notifications', container.querySelector('#pref-notifications').checked);
       localStorage.setItem('ps-notify-claude-input', container.querySelector('#pref-notify-claude-input').checked);
       localStorage.setItem('ps-notify-claude-finished', container.querySelector('#pref-notify-claude-finished').checked);
+      localStorage.setItem('ps-notify-permission', container.querySelector('#pref-notify-permission').checked);
+      localStorage.setItem('ps-notify-agent', container.querySelector('#pref-notify-agent').checked);
       localStorage.setItem('ps-notify-sound', container.querySelector('#pref-notify-sound').checked);
       const robotChecked = container.querySelector('#pref-robot').checked;
       localStorage.setItem('ps-robot-enabled', robotChecked);

@@ -1127,6 +1127,65 @@ html, body {
   display: none;
 }
 
+/* --- Sidebar mascot slot --- */
+#sidebar-mascot-slot:empty { display: none; }
+#sidebar-mascot-slot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 0;
+  min-height: 64px;
+  flex-shrink: 0;
+}
+#sidebar.collapsed #sidebar-mascot-slot { display: none; }
+
+/* Mascot when inside sidebar */
+#sidebar-mascot-slot #footer-mascot {
+  position: relative;
+  left: auto !important;
+  bottom: auto !important;
+  top: auto !important;
+  width: 52px;
+  height: 56px;
+  transition: none;
+}
+
+/* Drag-free mode: mascot follows cursor across containers */
+#footer-mascot.drag-free {
+  position: fixed !important;
+  z-index: 9999 !important;
+  pointer-events: none !important;
+  transition: none !important;
+}
+
+/* Drop zone highlight during drag */
+#sidebar.mascot-drag-hover {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+#robot-overlay.mascot-drag-hover {
+  background: rgba(var(--accent-rgb, 100,100,255), 0.06);
+}
+
+/* Sidebar-mode speech bubble: pop out to the right */
+#sidebar-mascot-slot .mascot-speech {
+  left: calc(100% + 8px) !important;
+  bottom: auto !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  white-space: nowrap;
+}
+#sidebar-mascot-slot .mascot-speech::after {
+  left: -4px !important;
+  bottom: auto !important;
+  top: 50% !important;
+  margin-top: -4px !important;
+  margin-left: 0 !important;
+  border-top: 4px solid transparent !important;
+  border-bottom: 4px solid transparent !important;
+  border-right: 5px solid var(--bg-card) !important;
+  border-left: none !important;
+}
+
 #footer-mascot {
   pointer-events: auto;
   position: absolute;

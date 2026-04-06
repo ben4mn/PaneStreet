@@ -1983,7 +1983,11 @@ function setupSidebarToggle() {
     const isCollapsing = !sidebar.classList.contains('collapsed');
     sidebar.classList.toggle('collapsed');
     robotOverlay?.classList.toggle('sidebar-collapsed', isCollapsing);
-    if (isCollapsing && Math.random() < 0.2 && Date.now() - sidebarReactCooldown > 10 * 60000) {
+    // If mascot is in sidebar and we're collapsing, evict it to footer
+    if (isCollapsing && robotLocation === 'sidebar') {
+      moveRobotTo('footer');
+      setTimeout(() => showSpeech('guess I gotta move', 2500, true), 400);
+    } else if (isCollapsing && Math.random() < 0.2 && Date.now() - sidebarReactCooldown > 10 * 60000) {
       sidebarReactCooldown = Date.now();
       setTimeout(() => { if (robotEl && !robotOverride) showSpeech('More room.', 2000); }, 600);
     }
@@ -2572,6 +2576,56 @@ let lastActivityIndex = -1;
 let robotSpecialActive = false;
 let robotSpecialName = null;
 let specialClickCount = 0;
+let robotLocation = localStorage.getItem('ps-robot-location') || 'footer'; // 'footer' | 'sidebar'
+
+const SIDEBAR_ENTRY_QUOTES = [
+  'ok ok ill stand over here', 'sorry if I was in the way of something',
+  'new office, same me', 'sidebar life, lets go',
+  'I can watch the sessions from here', 'cozy corner',
+];
+const SIDEBAR_EXIT_QUOTES = [
+  'back to my usual spot', 'miss me?',
+  'footer sweet footer', 'the view is better down here',
+  'I was getting claustrophobic', 'room to stretch',
+];
+
+function moveRobotTo(location, showQuote = true) {
+  if (location === robotLocation) return;
+  clearTimeout(robotTimer);
+  robotClearActivity();
+
+  const overlay = document.getElementById('robot-overlay');
+  const slot = document.getElementById('sidebar-mascot-slot');
+  if (!overlay || !slot || !robotEl) return;
+
+  if (location === 'sidebar') {
+    slot.appendChild(robotEl);
+    robotEl.style.transition = 'none';
+    robotEl.style.left = '';
+    robotEl.style.bottom = '';
+    robotEl.style.top = '';
+    if (showQuote) {
+      const q = SIDEBAR_ENTRY_QUOTES[Math.floor(Math.random() * SIDEBAR_ENTRY_QUOTES.length)];
+      setTimeout(() => showSpeech(q, 3000, true), 400);
+    }
+  } else {
+    overlay.appendChild(robotEl);
+    robotEl.style.transition = 'none';
+    robotEl.style.top = '';
+    robotEl.style.bottom = '0px';
+    const ow = overlay.clientWidth;
+    robotEl.style.left = Math.floor(4 + Math.random() * Math.max(100, ow - 80)) + 'px';
+    if (showQuote) {
+      const q = SIDEBAR_EXIT_QUOTES[Math.floor(Math.random() * SIDEBAR_EXIT_QUOTES.length)];
+      setTimeout(() => showSpeech(q, 3000, true), 400);
+    }
+  }
+
+  robotLocation = location;
+  localStorage.setItem('ps-robot-location', location);
+  void robotEl.offsetLeft; // force layout
+  if (!robotOverride) robotNext();
+}
 let specialEventScheduleTimer = null;
 let lastContextQuip = '';
 let contextScanTimer = null;
@@ -2727,13 +2781,26 @@ function robotInit() {
   }
 
   // Start at a random spot — disable transition so it doesn't slide from default position
-  robotEl.style.transition = 'none';
-  const overlayWidth = overlay ? overlay.clientWidth : 400;
-  robotEl.style.left = Math.floor(4 + Math.random() * Math.max(100, overlayWidth - 80)) + 'px';
-  // Force layout before re-enabling transition
-  void robotEl.offsetLeft;
+  if (robotLocation === 'footer') {
+    robotEl.style.transition = 'none';
+    const overlayWidth = overlay ? overlay.clientWidth : 400;
+    robotEl.style.left = Math.floor(4 + Math.random() * Math.max(100, overlayWidth - 80)) + 'px';
+    // Force layout before re-enabling transition
+    void robotEl.offsetLeft;
+  }
 
-  // --- Drag handling (pick up above line, drop back down) ---
+  // Restore saved location (sidebar or footer)
+  if (robotLocation === 'sidebar') {
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && !sidebar.classList.contains('collapsed')) {
+      moveRobotTo('sidebar', false);
+    } else {
+      robotLocation = 'footer';
+      localStorage.setItem('ps-robot-location', 'footer');
+    }
+  }
+
+  // --- Drag handling (pick up, cross-container drag, drop) ---
   let isDragging = false;
   let hasDragged = false;
   let dragStartX = 0;
@@ -2743,8 +2810,10 @@ function robotInit() {
   let petTimer = null;
   let secretFired = false;
   let petFired = false;
+  let dragStartLocation = 'footer';
 
-  overlay?.addEventListener('mousedown', (e) => {
+  // Attach to robotEl so it survives reparenting between overlay and sidebar
+  robotEl.addEventListener('mousedown', (e) => {
     const rect = robotEl.getBoundingClientRect();
     const dx = e.clientX - (rect.left + rect.width / 2);
     const dy = e.clientY - (rect.top + rect.height / 2);
@@ -2758,11 +2827,12 @@ function robotInit() {
     dragStartX = e.clientX;
     dragStartY = e.clientY;
     dragStartLeft = parseInt(robotEl.style.left) || 0;
+    dragStartLocation = robotLocation;
 
     clearTimeout(robotTimer);
     robotClearActivity();
     robotEl.style.transition = 'none';
-    robotEl.style.bottom = '0px';
+    if (robotLocation === 'footer') robotEl.style.bottom = '0px';
     robotEl.classList.add('dragging');
     e.preventDefault();
 
@@ -2794,16 +2864,37 @@ function robotInit() {
     const deltaY = dragStartY - e.clientY; // up = positive
     if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
       hasDragged = true;
-      // Cancel hold timers once the user starts dragging
       if (petTimer)  { clearTimeout(petTimer);  petTimer = null; }
       if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
     }
-    const ow = overlay ? overlay.clientWidth : window.innerWidth;
-    const newLeft = Math.max(4, Math.min(ow - 72, dragStartLeft + deltaX));
-    robotEl.style.left = newLeft + 'px';
-    // Allow picking up above the bottom line
-    const liftY = Math.max(0, deltaY);
-    robotEl.style.bottom = liftY + 'px';
+
+    // Switch to drag-free mode for cross-container dragging
+    if (hasDragged && !robotEl.classList.contains('drag-free')) {
+      robotEl.classList.add('drag-free');
+    }
+
+    if (robotEl.classList.contains('drag-free')) {
+      robotEl.style.left = (e.clientX - 34) + 'px';
+      robotEl.style.top = (e.clientY - 36) + 'px';
+      robotEl.style.bottom = 'auto';
+
+      // Highlight valid drop zones
+      const sidebar = document.getElementById('sidebar');
+      const sidebarRect = sidebar.getBoundingClientRect();
+      const isOverSidebar = !sidebar.classList.contains('collapsed') &&
+        e.clientX < sidebarRect.right && e.clientY > sidebarRect.top;
+      sidebar.classList.toggle('mascot-drag-hover', isOverSidebar);
+      overlay?.classList.toggle('mascot-drag-hover', !isOverSidebar);
+    } else {
+      // Small movement — original in-container drag
+      if (robotLocation === 'footer') {
+        const ow = overlay ? overlay.clientWidth : window.innerWidth;
+        const newLeft = Math.max(4, Math.min(ow - 72, dragStartLeft + deltaX));
+        robotEl.style.left = newLeft + 'px';
+        const liftY = Math.max(0, deltaY);
+        robotEl.style.bottom = liftY + 'px';
+      }
+    }
   });
 
   const DROP_QUOTES = [
@@ -2813,44 +2904,90 @@ function robotInit() {
     'That was fun!', 'Do NOT do that again.', 'I think I left my stomach up there.',
   ];
 
-  document.addEventListener('mouseup', () => {
+  document.addEventListener('mouseup', (e) => {
     if (petTimer)  { clearTimeout(petTimer);  petTimer = null; }
     if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
     if (!isDragging) return;
     isDragging = false;
     robotEl.classList.remove('dragging');
-    touchInteraction();
-    const currentBottom = parseInt(robotEl.style.bottom) || 0;
-    if (currentBottom > 20) {
-      // Falling! Wave arms and speak
-      robotEl.classList.add('act-falling');
-      const fallDuration = Math.min(2.2, 0.9 + currentBottom * 0.006);
-      robotEl.style.transition = `bottom ${fallDuration}s cubic-bezier(0.33, 0, 0.66, 1)`;
-      robotEl.style.bottom = '0px';
-      showSpeech(DROP_QUOTES[Math.floor(Math.random() * DROP_QUOTES.length)], 2500, true);
-      setTimeout(() => {
-        robotEl.style.transition = '';
-        robotEl.classList.remove('act-falling');
-        robotEl.classList.add('act-bounce');
-        setTimeout(() => { robotEl.classList.remove('act-bounce'); if (!robotOverride) robotNext(); }, 600);
-      }, fallDuration * 1000);
-    } else if (currentBottom > 0) {
-      robotEl.style.transition = 'bottom 0.3s ease-out';
-      robotEl.style.bottom = '0px';
-      setTimeout(() => { robotEl.style.transition = ''; }, 350);
-      if (hasDragged) {
-        showSpeech(['New spot, nice.', 'I like it here.', 'Cozy.', 'Good enough.'][Math.floor(Math.random() * 4)], 2000);
-        setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
-      } else {
-        if (!robotOverride) robotNext();
+
+    // Clean up drop zone highlights
+    const sidebar = document.getElementById('sidebar');
+    sidebar?.classList.remove('mascot-drag-hover');
+    overlay?.classList.remove('mascot-drag-hover');
+
+    const wasDragFree = robotEl.classList.contains('drag-free');
+    robotEl.classList.remove('drag-free');
+
+    if (wasDragFree && hasDragged) {
+      // Cross-container drop — detect which zone the cursor is over
+      const sidebarRect = sidebar?.getBoundingClientRect();
+      const isOverSidebar = sidebarRect && !sidebar.classList.contains('collapsed') &&
+        e.clientX < sidebarRect.right && e.clientY > sidebarRect.top;
+
+      if (isOverSidebar && robotLocation !== 'sidebar') {
+        moveRobotTo('sidebar');
+        return;
+      } else if (!isOverSidebar && robotLocation !== 'footer') {
+        moveRobotTo('footer');
+        return;
       }
-    } else {
-      if (hasDragged) {
+      // Dropped in same zone — reset position
+      if (robotLocation === 'sidebar') {
+        robotEl.style.left = '';
+        robotEl.style.top = '';
+        robotEl.style.bottom = '';
         showSpeech(['New spot, nice.', 'I like it here.', 'Fine by me.', 'This works.'][Math.floor(Math.random() * 4)], 2000);
         setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
       } else {
-        if (!robotOverride) robotNext();
+        robotEl.style.top = '';
+        const ow = overlay ? overlay.clientWidth : window.innerWidth;
+        const newLeft = Math.max(4, Math.min(ow - 72, e.clientX - (overlay?.getBoundingClientRect().left || 0) - 34));
+        robotEl.style.left = newLeft + 'px';
+        robotEl.style.bottom = '0px';
+        showSpeech(['New spot, nice.', 'I like it here.', 'Fine by me.', 'This works.'][Math.floor(Math.random() * 4)], 2000);
+        setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
       }
+      return;
+    }
+
+    // Standard in-zone drop (footer only — sidebar doesn't have lift physics)
+    touchInteraction();
+    if (robotLocation === 'footer') {
+      const currentBottom = parseInt(robotEl.style.bottom) || 0;
+      if (currentBottom > 20) {
+        robotEl.classList.add('act-falling');
+        const fallDuration = Math.min(2.2, 0.9 + currentBottom * 0.006);
+        robotEl.style.transition = `bottom ${fallDuration}s cubic-bezier(0.33, 0, 0.66, 1)`;
+        robotEl.style.bottom = '0px';
+        showSpeech(DROP_QUOTES[Math.floor(Math.random() * DROP_QUOTES.length)], 2500, true);
+        setTimeout(() => {
+          robotEl.style.transition = '';
+          robotEl.classList.remove('act-falling');
+          robotEl.classList.add('act-bounce');
+          setTimeout(() => { robotEl.classList.remove('act-bounce'); if (!robotOverride) robotNext(); }, 600);
+        }, fallDuration * 1000);
+      } else if (currentBottom > 0) {
+        robotEl.style.transition = 'bottom 0.3s ease-out';
+        robotEl.style.bottom = '0px';
+        setTimeout(() => { robotEl.style.transition = ''; }, 350);
+        if (hasDragged) {
+          showSpeech(['New spot, nice.', 'I like it here.', 'Cozy.', 'Good enough.'][Math.floor(Math.random() * 4)], 2000);
+          setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
+        } else {
+          if (!robotOverride) robotNext();
+        }
+      } else {
+        if (hasDragged) {
+          showSpeech(['New spot, nice.', 'I like it here.', 'Fine by me.', 'This works.'][Math.floor(Math.random() * 4)], 2000);
+          setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
+        } else {
+          if (!robotOverride) robotNext();
+        }
+      }
+    } else {
+      // Sidebar drop without drag-free — just resume
+      if (!robotOverride) robotNext();
     }
   });
 
@@ -2858,7 +2995,7 @@ function robotInit() {
   let clickCount = 0;
   let clickResetTimer = null;
 
-  overlay?.addEventListener('click', (e) => {
+  robotEl.addEventListener('click', (e) => {
     if (robotSpecialActive) {
       specialClickCount++;
       if (specialClickCount >= 2) {
@@ -2995,7 +3132,7 @@ function robotInit() {
 
   // If window resizes and robot is off-screen, walk back into view
   window.addEventListener('resize', () => {
-    if (!robotEl || !overlay) return;
+    if (!robotEl || !overlay || robotLocation === 'sidebar') return;
     const overlayWidth = overlay.clientWidth;
     const currentLeft = parseInt(robotEl.style.left) || 0;
     if (currentLeft > overlayWidth - 60) {
@@ -3080,6 +3217,8 @@ function toggleRobot(enabled) {
     localStorage.setItem('ps-robot-enabled', 'true');
     if (!robotOverride) robotNext();
   } else {
+    // Move back to footer before hiding so sidebar slot doesn't stay populated
+    if (robotLocation === 'sidebar') moveRobotTo('footer', false);
     overlay.classList.add('hidden');
     localStorage.setItem('ps-robot-enabled', 'false');
     clearTimeout(robotTimer);
@@ -3088,6 +3227,7 @@ function toggleRobot(enabled) {
 }
 
 function walkTo(destX, callback, clamp = true) {
+  if (robotLocation === 'sidebar') { if (callback) callback(); return; }
   const overlay = document.getElementById('robot-overlay');
   const overlayWidth = overlay ? overlay.clientWidth : window.innerWidth;
   const dest = clamp ? Math.max(4, Math.min(overlayWidth - 80, destX)) : destX;
@@ -3115,7 +3255,7 @@ function scheduleSpecialEvent() {
   clearTimeout(specialEventScheduleTimer);
   const delay = (4 + Math.random() * 2) * 60 * 1000; // 4-6 min
   specialEventScheduleTimer = setTimeout(() => {
-    if (!robotEl || robotOverride || localStorage.getItem('ps-robot-enabled') === 'false') {
+    if (!robotEl || robotOverride || robotLocation === 'sidebar' || localStorage.getItem('ps-robot-enabled') === 'false') {
       scheduleSpecialEvent(); return;
     }
     clearTimeout(robotTimer);
@@ -3277,6 +3417,11 @@ function robotWalk() {
   if (robotOverride) return;
   robotClearActivity();
 
+  if (robotLocation === 'sidebar') {
+    robotWalkSidebar();
+    return;
+  }
+
   // Pick a random destination within the overlay (which starts after sidebar)
   const overlay = document.getElementById('robot-overlay');
   const overlayWidth = overlay ? overlay.clientWidth : window.innerWidth;
@@ -3321,6 +3466,26 @@ function robotWalk() {
       robotTimer = setTimeout(() => {
         robotEl.classList.remove('walk-arrive');
         // Rest after walking (respects frequency)
+        const f = getFrequency();
+        robotTimer = setTimeout(() => robotNext(), (f.idleMin + Math.random() * (f.idleMax - f.idleMin)) * 1000);
+      }, 300);
+    }, duration * 1000);
+  }, 200);
+}
+
+function robotWalkSidebar() {
+  // In sidebar, do a gentle bob/shuffle in place (limited vertical space)
+  robotEl.classList.add('walk-anticipate');
+  robotTimer = setTimeout(() => {
+    robotEl.classList.remove('walk-anticipate');
+    robotEl.classList.add('walking');
+    // Short duration shuffle — sidebar space is tight
+    const duration = 1.5 + Math.random() * 2;
+    robotTimer = setTimeout(() => {
+      robotEl.classList.remove('walking');
+      robotEl.classList.add('walk-arrive');
+      robotTimer = setTimeout(() => {
+        robotEl.classList.remove('walk-arrive');
         const f = getFrequency();
         robotTimer = setTimeout(() => robotNext(), (f.idleMin + Math.random() * (f.idleMax - f.idleMin)) * 1000);
       }, 300);
@@ -3578,17 +3743,27 @@ function showSpeech(text, duration = 3000, priority = false) {
   lastSpeechTime = now;
   speechTimestamps.push(now);
   el.textContent = text;
-  el.style.left = '50%';
-  el.style.transform = 'translateX(-50%)';
+  if (robotLocation === 'sidebar') {
+    // Sidebar mode — CSS handles positioning (pops out to the right)
+    el.style.left = '';
+    el.style.transform = '';
+    el.style.bottom = '';
+    el.style.top = '';
+  } else {
+    el.style.left = '50%';
+    el.style.transform = 'translateX(-50%)';
+  }
   el.classList.add('visible');
-  requestAnimationFrame(() => {
-    const rect = el.getBoundingClientRect();
-    if (rect.left < 8) {
-      el.style.left = `calc(50% + ${8 - rect.left}px)`;
-    } else if (rect.right > window.innerWidth - 8) {
-      el.style.left = `calc(50% - ${rect.right - window.innerWidth + 8}px)`;
-    }
-  });
+  if (robotLocation !== 'sidebar') {
+    requestAnimationFrame(() => {
+      const rect = el.getBoundingClientRect();
+      if (rect.left < 8) {
+        el.style.left = `calc(50% + ${8 - rect.left}px)`;
+      } else if (rect.right > window.innerWidth - 8) {
+        el.style.left = `calc(50% - ${rect.right - window.innerWidth + 8}px)`;
+      }
+    });
+  }
   setTimeout(() => el.classList.remove('visible'), duration);
 }
 
@@ -3941,8 +4116,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Just silently update mascot awareness, don't add to panel.
       return;
     } else {
-      notifTitle = eventType || 'Claude Code';
-      notifBody = message || tool || 'Event';
+      // Unknown event type — ignore silently (avoids spurious notifications on session start, etc.)
+      return;
+    }
+
+    // Per-type notification filtering (respects user settings)
+    if (eventType === 'Notification') {
+      if (ntype === 'permission_prompt' && localStorage.getItem('ps-notify-permission') === 'false') return;
+      if (ntype === 'idle_prompt' && localStorage.getItem('ps-notify-claude-input') === 'false') return;
+    } else if (eventType === 'Stop') {
+      if (localStorage.getItem('ps-notify-claude-finished') === 'false') return;
+    } else if (eventType === 'SubagentStop') {
+      if (localStorage.getItem('ps-notify-agent') === 'false') return;
     }
 
     // Map to PaneStreet session index (single-session heuristic for now)
@@ -3955,8 +4140,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         showSpeech(mascotQuip, 3000, true);
       }
     } else {
-      // App is backgrounded — send desktop notification (skip SubagentStop to avoid spam)
-      if (eventType !== 'SubagentStop' && localStorage.getItem('ps-notifications') !== 'false') {
+      // App is backgrounded — send desktop notification
+      if (localStorage.getItem('ps-notifications') !== 'false') {
         invoke('plugin:notification|is_permission_granted').then(granted => {
           if (granted) {
             const options = { title: notifTitle, body: notifBody };
