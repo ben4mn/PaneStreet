@@ -2876,15 +2876,18 @@ function robotInit() {
     if (hasDragged && !robotEl.classList.contains('drag-free')) {
       const sidebar = document.getElementById('sidebar');
       const sidebarRect = sidebar?.getBoundingClientRect();
+      const overlayRect = overlay?.getBoundingClientRect();
       if (robotLocation === 'sidebar') {
         // Left the sidebar? Go drag-free
-        if (sidebarRect && (e.clientX > sidebarRect.right + 20 || e.clientY < sidebarRect.top)) {
+        if (sidebarRect && (e.clientX > sidebarRect.right + 10 || e.clientY < sidebarRect.top)) {
           robotEl.classList.add('drag-free');
         }
       } else {
-        // Left the footer overlay? Go drag-free
-        const overlayRect = overlay?.getBoundingClientRect();
-        if (overlayRect && (e.clientX < overlayRect.left - 20 || e.clientY < overlayRect.top - 40)) {
+        // Cursor is over the sidebar, or lifted well above the footer overlay
+        const overSidebar = sidebarRect && !sidebar.classList.contains('collapsed') &&
+          e.clientX < sidebarRect.right && e.clientY > sidebarRect.top;
+        const liftedHigh = overlayRect && e.clientY < overlayRect.top - 30;
+        if (overSidebar || liftedHigh) {
           robotEl.classList.add('drag-free');
         }
       }
@@ -2900,7 +2903,7 @@ function robotInit() {
       const sidebar = document.getElementById('sidebar');
       const sidebarRect = sidebar.getBoundingClientRect();
       const isOverSidebar = !sidebar.classList.contains('collapsed') &&
-        e.clientX < sidebarRect.right && e.clientY > sidebarRect.top;
+        e.clientX < sidebarRect.right + 15 && e.clientY > sidebarRect.top;
       sidebar.classList.toggle('mascot-drag-hover', isOverSidebar);
       overlay?.classList.toggle('mascot-drag-hover', !isOverSidebar);
     } else if (robotLocation === 'sidebar') {
@@ -2945,7 +2948,7 @@ function robotInit() {
       // Cross-container drop — detect which zone the cursor is over
       const sidebarRect = sidebar?.getBoundingClientRect();
       const isOverSidebar = sidebarRect && !sidebar.classList.contains('collapsed') &&
-        e.clientX < sidebarRect.right && e.clientY > sidebarRect.top;
+        e.clientX < sidebarRect.right + 15 && e.clientY > sidebarRect.top;
 
       if (isOverSidebar && robotLocation !== 'sidebar') {
         moveRobotTo('sidebar');
