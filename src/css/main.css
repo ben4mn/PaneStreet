@@ -1134,28 +1134,32 @@ html, body {
   position: relative;
   min-height: 64px;
   pointer-events: none;
+  overflow: visible;
 }
 #sidebar.collapsed #sidebar-mascot-slot { display: none; }
 
 /* Mascot when inside sidebar — absolute positioned, walks vertically */
 #sidebar-mascot-slot #footer-mascot {
-  position: absolute !important;
-  bottom: 0 !important;
-  left: 50% !important;
+  position: absolute;
+  bottom: 0;
+  left: 50%;
   transform: translateX(-50%);
-  top: auto !important;
+  top: auto;
   width: 52px;
   height: 56px;
   pointer-events: auto;
-  transition: bottom 10s linear;
 }
 
-/* Drag-free mode: mascot follows cursor across containers */
-#footer-mascot.drag-free {
+/* Drag-free mode: mascot follows cursor across containers.
+   Must beat #sidebar-mascot-slot #footer-mascot specificity (0,2,0,0) */
+#footer-mascot.drag-free,
+#sidebar-mascot-slot #footer-mascot.drag-free {
   position: fixed !important;
   z-index: 9999 !important;
   pointer-events: none !important;
   transition: none !important;
+  width: 68px !important;
+  height: 72px !important;
 }
 
 /* Drop zone highlight during drag */

@@ -2808,6 +2808,7 @@ function robotInit() {
   let dragStartX = 0;
   let dragStartY = 0;
   let dragStartLeft = 0;
+  let dragStartBottom = 0;
   let holdTimer = null;
   let petTimer = null;
   let secretFired = false;
@@ -2829,6 +2830,7 @@ function robotInit() {
     dragStartX = e.clientX;
     dragStartY = e.clientY;
     dragStartLeft = parseInt(robotEl.style.left) || 0;
+    dragStartBottom = parseInt(robotEl.style.bottom) || 0;
     dragStartLocation = robotLocation;
 
     clearTimeout(robotTimer);
@@ -2905,8 +2907,7 @@ function robotInit() {
       // In-sidebar drag: move vertically
       const slot = document.getElementById('sidebar-mascot-slot');
       const slotH = slot ? slot.clientHeight : 200;
-      const dragStartBottom = parseInt(robotEl.style.bottom) || 0;
-      const newBottom = Math.max(0, Math.min(slotH - 56, dragStartBottom + (dragStartY - e.clientY)));
+      const newBottom = Math.max(0, Math.min(slotH - 56, dragStartBottom + (e.clientY - dragStartY) * -1));
       robotEl.style.bottom = newBottom + 'px';
     } else {
       // In-footer drag: move horizontally + lift
