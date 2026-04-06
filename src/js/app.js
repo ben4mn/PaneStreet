@@ -3512,13 +3512,9 @@ function robotWalk() {
 }
 
 function robotWalkSidebar() {
-  // Walk vertically within the sidebar slot
-  const slot = document.getElementById('sidebar-mascot-slot');
-  if (!slot) return;
-  const slotH = slot.clientHeight;
-  const maxBottom = Math.max(0, slotH - 56);
+  // Shuffle near the bottom of the sidebar slot (max 40px up)
   const currentBottom = parseInt(robotEl.style.bottom) || 0;
-  const dest = Math.floor(Math.random() * maxBottom);
+  const dest = Math.floor(Math.random() * 40);
   const distance = Math.abs(dest - currentBottom);
   const duration = Math.max(2, distance * 0.06);
 
