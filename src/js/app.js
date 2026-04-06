@@ -2872,48 +2872,36 @@ function robotInit() {
       if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
     }
 
-    // Detect if cursor has left the current container → switch to drag-free (cross-container)
-    if (hasDragged && !robotEl.classList.contains('drag-free')) {
-      const sidebar = document.getElementById('sidebar');
-      const sidebarRect = sidebar?.getBoundingClientRect();
-      const overlayRect = overlay?.getBoundingClientRect();
-      if (robotLocation === 'sidebar') {
-        // Left the sidebar? Go drag-free
-        if (sidebarRect && (e.clientX > sidebarRect.right + 10 || e.clientY < sidebarRect.top)) {
-          robotEl.classList.add('drag-free');
-        }
-      } else {
-        // Cursor is over the sidebar, or lifted well above the footer overlay
-        const overSidebar = sidebarRect && !sidebar.classList.contains('collapsed') &&
-          e.clientX < sidebarRect.right && e.clientY > sidebarRect.top;
-        const liftedHigh = overlayRect && e.clientY < overlayRect.top - 30;
-        if (overSidebar || liftedHigh) {
-          robotEl.classList.add('drag-free');
-        }
-      }
+    // After 30px total movement, switch to drag-free (allows cross-container drops)
+    const totalDrag = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    if (hasDragged && totalDrag > 30 && !robotEl.classList.contains('drag-free')) {
+      // Remove .dragging first — its transform: scale(1.08) breaks position: fixed
+      robotEl.classList.remove('dragging');
+      robotEl.classList.add('drag-free');
     }
 
     if (robotEl.classList.contains('drag-free')) {
+      // Free-floating: follow cursor with fixed positioning
       robotEl.style.left = (e.clientX - 34) + 'px';
       robotEl.style.top = (e.clientY - 36) + 'px';
       robotEl.style.bottom = 'auto';
       robotEl.style.transform = '';
 
-      // Highlight valid drop zones
+      // Highlight the drop zone the cursor is over
       const sidebar = document.getElementById('sidebar');
-      const sidebarRect = sidebar.getBoundingClientRect();
-      const isOverSidebar = !sidebar.classList.contains('collapsed') &&
+      const sidebarRect = sidebar?.getBoundingClientRect();
+      const isOverSidebar = sidebarRect && !sidebar.classList.contains('collapsed') &&
         e.clientX < sidebarRect.right + 15 && e.clientY > sidebarRect.top;
-      sidebar.classList.toggle('mascot-drag-hover', isOverSidebar);
+      sidebar?.classList.toggle('mascot-drag-hover', isOverSidebar);
       overlay?.classList.toggle('mascot-drag-hover', !isOverSidebar);
     } else if (robotLocation === 'sidebar') {
-      // In-sidebar drag: move vertically
+      // Small in-sidebar drag: move vertically
       const slot = document.getElementById('sidebar-mascot-slot');
       const slotH = slot ? slot.clientHeight : 200;
       const newBottom = Math.max(0, Math.min(slotH - 56, dragStartBottom + (e.clientY - dragStartY) * -1));
       robotEl.style.bottom = newBottom + 'px';
     } else {
-      // In-footer drag: move horizontally + lift
+      // Small in-footer drag: move horizontally + lift
       const ow = overlay ? overlay.clientWidth : window.innerWidth;
       const newLeft = Math.max(4, Math.min(ow - 72, dragStartLeft + deltaX));
       robotEl.style.left = newLeft + 'px';
@@ -2953,23 +2941,41 @@ function robotInit() {
       if (isOverSidebar && robotLocation !== 'sidebar') {
         moveRobotTo('sidebar');
         return;
-      } else if (!isOverSidebar && robotLocation !== 'footer') {
-        moveRobotTo('footer');
-        return;
       }
-      // Dropped in same zone — reset position
+
+      // Dropping into footer (from sidebar or same zone) — land at cursor with falling animation
       if (robotLocation === 'sidebar') {
-        robotEl.style.left = '50%';
-        robotEl.style.transform = 'translateX(-50%)';
-        robotEl.style.top = '';
+        // Reparent without quote — we'll show the falling animation instead
+        moveRobotTo('footer', false);
+      }
+      // Position at cursor X, calculate drop height for falling
+      const overlayRect = overlay?.getBoundingClientRect();
+      const dropLeft = Math.max(4, Math.min(
+        (overlay?.clientWidth || window.innerWidth) - 72,
+        e.clientX - (overlayRect?.left || 0) - 34
+      ));
+      const dropHeight = Math.max(0, (overlayRect?.bottom || window.innerHeight) - e.clientY);
+      robotEl.style.left = dropLeft + 'px';
+      robotEl.style.top = '';
+      robotEl.style.transform = '';
+
+      if (dropHeight > 20) {
+        // Falling! Arms flail, cute quote
+        robotEl.style.transition = 'none';
+        robotEl.style.bottom = dropHeight + 'px';
+        void robotEl.offsetHeight; // force reflow — browser must register start position
+        robotEl.classList.add('act-falling');
+        const fallDuration = Math.min(3.5, 0.8 + dropHeight * 0.012);
+        robotEl.style.transition = `bottom ${fallDuration}s cubic-bezier(0.33, 0, 0.66, 1)`;
         robotEl.style.bottom = '0px';
-        showSpeech(['New spot, nice.', 'I like it here.', 'Fine by me.', 'This works.'][Math.floor(Math.random() * 4)], 2000);
-        setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
+        showSpeech(DROP_QUOTES[Math.floor(Math.random() * DROP_QUOTES.length)], 2500, true);
+        setTimeout(() => {
+          robotEl.style.transition = '';
+          robotEl.classList.remove('act-falling');
+          robotEl.classList.add('act-bounce');
+          setTimeout(() => { robotEl.classList.remove('act-bounce'); if (!robotOverride) robotNext(); }, 600);
+        }, fallDuration * 1000);
       } else {
-        robotEl.style.top = '';
-        const ow = overlay ? overlay.clientWidth : window.innerWidth;
-        const newLeft = Math.max(4, Math.min(ow - 72, e.clientX - (overlay?.getBoundingClientRect().left || 0) - 34));
-        robotEl.style.left = newLeft + 'px';
         robotEl.style.bottom = '0px';
         showSpeech(['New spot, nice.', 'I like it here.', 'Fine by me.', 'This works.'][Math.floor(Math.random() * 4)], 2000);
         setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);

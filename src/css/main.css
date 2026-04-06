@@ -1155,6 +1155,7 @@ html, body {
 #footer-mascot.drag-free,
 #sidebar-mascot-slot #footer-mascot.drag-free {
   position: fixed !important;
+  transform: none !important;
   z-index: 9999 !important;
   pointer-events: none !important;
   transition: none !important;
@@ -1170,14 +1171,17 @@ html, body {
   background: rgba(var(--accent-rgb, 100,100,255), 0.06);
 }
 
-/* Sidebar-mode speech bubble: appear above the mascot, centered */
+/* Sidebar-mode speech bubble: wraps text to fit sidebar */
 #sidebar-mascot-slot .mascot-speech {
   left: 50% !important;
   bottom: 100% !important;
   top: auto !important;
   transform: translateX(-50%) !important;
   margin-bottom: 6px !important;
-  white-space: nowrap;
+  white-space: normal !important;
+  width: max-content;
+  max-width: 140px;
+  text-align: center;
 }
 #sidebar-mascot-slot .mascot-speech::after {
   left: 50% !important;
