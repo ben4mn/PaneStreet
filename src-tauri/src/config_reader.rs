@@ -460,19 +460,35 @@ fn ensure_notify_script() -> Result<String, String> {
 # Only fires for sessions running inside PaneStreet (PANESTREET=1 env var).
 [ -z "$PANESTREET" ] && cat > /dev/null && exit 0
 INPUT=$(cat)
-# Extract fields with lightweight parsing (no jq dependency)
-EVENT=$(echo "$INPUT" | grep -o '"hook_event_name":"[^"]*"' | head -1 | cut -d'"' -f4)
-TOOL=$(echo "$INPUT" | grep -o '"tool_name":"[^"]*"' | head -1 | cut -d'"' -f4)
-MSG=$(echo "$INPUT" | grep -o '"message":"[^"]*"' | head -1 | cut -d'"' -f4)
-TITLE=$(echo "$INPUT" | grep -o '"title":"[^"]*"' | head -1 | cut -d'"' -f4)
-NTYPE=$(echo "$INPUT" | grep -o '"notification_type":"[^"]*"' | head -1 | cut -d'"' -f4)
-# Truncate last_assistant_message to 200 chars to keep socket payload small
-LAST_MSG=$(echo "$INPUT" | grep -o '"last_assistant_message":"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-200)
-SESSION=$(echo "$INPUT" | grep -o '"session_id":"[^"]*"' | head -1 | cut -d'"' -f4)
-# Send to PaneStreet socket
-printf '{{"cmd":"hook-event","event":"%s","tool":"%s","message":"%s","title":"%s","ntype":"%s","last_msg":"%s","session":"%s"}}\n' \
-  "${{EVENT:-unknown}}" "${{TOOL:-}}" "${{MSG:-}}" "${{TITLE:-}}" "${{NTYPE:-}}" "${{LAST_MSG:-}}" "${{SESSION:-}}" \
-  | nc -U "{sock}" -w 1 2>/dev/null || true
+# Use python3 for robust JSON parsing (handles escaped quotes, newlines, unicode)
+python3 -c "
+import json, sys, socket
+try:
+    d = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+def g(k, maxlen=0):
+    v = str(d.get(k, ''))
+    return v[:maxlen] if maxlen else v
+payload = json.dumps({{
+    'cmd': 'hook-event',
+    'event': g('hook_event_name') or 'unknown',
+    'tool': g('tool_name'),
+    'message': g('message'),
+    'title': g('title'),
+    'ntype': g('notification_type'),
+    'last_msg': g('last_assistant_message', 200),
+    'session': g('session_id'),
+}})
+try:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(1)
+    s.connect('{sock}')
+    s.sendall((payload + '\\n').encode())
+    s.close()
+except Exception:
+    pass
+" "$INPUT" 2>/dev/null || true
 "#,
         marker = HOOK_MARKER,
         sock = sock_path.display()

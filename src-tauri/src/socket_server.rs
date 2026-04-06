@@ -125,6 +125,13 @@ fn process_command(input: &str, app: &tauri::AppHandle) -> SocketResponse {
     let cmd: SocketCommand = match serde_json::from_str(input) {
         Ok(c) => c,
         Err(e) => {
+            let _ = app.emit(
+                "socket-parse-error",
+                serde_json::json!({
+                    "error": format!("Invalid JSON: {}", e),
+                    "input": &input[..input.len().min(200)],
+                }),
+            );
             return SocketResponse {
                 ok: false,
                 data: None,

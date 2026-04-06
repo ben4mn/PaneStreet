@@ -550,6 +550,7 @@ html, body {
   display: flex;
   min-height: 0;
   position: relative;
+  overflow: hidden;
 }
 
 /* Pane grid */
@@ -864,7 +865,7 @@ html, body {
 }
 
 .pane-body .xterm-screen {
-  width: 100% !important;
+  max-width: 100%;
 }
 
 /* Footer */

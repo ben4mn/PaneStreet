@@ -2142,6 +2142,7 @@ function addNotification(sessionName, status, sessionIndex) {
   if (notificationHistory.length > 100) notificationHistory.length = 100;
   unreadNotificationCount++;
   updateNotificationBadge();
+  if (notifPanelVisible) renderNotificationPanel();
 }
 
 function updateNotificationBadge() {
@@ -3082,6 +3083,7 @@ function toggleRobot(enabled) {
     overlay.classList.add('hidden');
     localStorage.setItem('ps-robot-enabled', 'false');
     clearTimeout(robotTimer);
+    robotClearActivity();
   }
 }
 
@@ -3257,6 +3259,8 @@ function triggerCartwheelEvent() {
 
 function robotNext() {
   if (!robotEl || robotOverride) return;
+  // Defensive: clear any stale special-event classes
+  robotEl.classList.remove('act-special-broom', 'act-special-cartwheel');
   const freq = getFrequency();
   const idlePause = (freq.idleMin + Math.random() * (freq.idleMax - freq.idleMin)) * 1000;
   robotTimer = setTimeout(() => {
@@ -3408,14 +3412,14 @@ function robotClearActivity() {
   for (const act of ACTIVITIES) {
     robotEl.classList.remove(act.cls);
   }
-  // Clean up any active special event state
+  // Always remove special-event classes (guard was causing orphaned broom props)
+  robotEl.classList.remove('act-special-broom', 'act-special-cartwheel');
+  const deskProp = document.getElementById('robot-prop-desk');
+  if (deskProp) { deskProp.style.transition = 'none'; deskProp.style.right = '-200px'; }
   if (robotSpecialActive) {
     robotSpecialActive = false;
     robotSpecialName = null;
     specialClickCount = 0;
-    robotEl.classList.remove('act-special-broom', 'act-special-cartwheel');
-    const deskProp = document.getElementById('robot-prop-desk');
-    if (deskProp) { deskProp.style.transition = 'none'; deskProp.style.right = '-200px'; }
   }
   robotEl.style.transition = 'none';
 }
@@ -3893,7 +3897,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Claude Code hook events — rich notifications from stdin JSON
   listen('claude-hook-event', (event) => {
-    const { event: eventType, tool, message, title: hookTitle, ntype, last_msg } = event.payload;
+    const { event: eventType, tool, message, title: hookTitle, ntype, last_msg, session: claudeSessionId } = event.payload;
 
     // Build specific notification based on event type and available data
     let notifTitle = 'Claude Code';
@@ -3941,8 +3945,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       notifBody = message || tool || 'Event';
     }
 
-    // Log to notification panel
-    addNotification(notifTitle, notifBody, -1);
+    // Map to PaneStreet session index (single-session heuristic for now)
+    const sessionIndex = sessions.length === 1 ? 0 : -1;
+    addNotification(notifTitle, notifBody, sessionIndex);
 
     if (windowFocused) {
       // App is open — mascot reacts subtly for important events only
@@ -3961,6 +3966,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         }).catch(() => {});
       }
     }
+  });
+
+  // Surface socket parse errors for debugging
+  listen('socket-parse-error', (event) => {
+    console.warn('[PaneStreet] Socket parse error:', event.payload.error, event.payload.input);
   });
 
   // Window drag via Tauri startDragging — skip interactive elements only
