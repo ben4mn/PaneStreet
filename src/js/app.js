@@ -2601,8 +2601,9 @@ function moveRobotTo(location, showQuote = true) {
   if (location === 'sidebar') {
     slot.appendChild(robotEl);
     robotEl.style.transition = 'none';
-    robotEl.style.left = '';
-    robotEl.style.bottom = '';
+    robotEl.style.left = '50%';
+    robotEl.style.transform = 'translateX(-50%)';
+    robotEl.style.bottom = '0px';
     robotEl.style.top = '';
     if (showQuote) {
       const q = SIDEBAR_ENTRY_QUOTES[Math.floor(Math.random() * SIDEBAR_ENTRY_QUOTES.length)];
@@ -2612,6 +2613,7 @@ function moveRobotTo(location, showQuote = true) {
     overlay.appendChild(robotEl);
     robotEl.style.transition = 'none';
     robotEl.style.top = '';
+    robotEl.style.transform = '';
     robotEl.style.bottom = '0px';
     const ow = overlay.clientWidth;
     robotEl.style.left = Math.floor(4 + Math.random() * Math.max(100, ow - 80)) + 'px';
@@ -2868,15 +2870,29 @@ function robotInit() {
       if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
     }
 
-    // Switch to drag-free mode for cross-container dragging
+    // Detect if cursor has left the current container → switch to drag-free (cross-container)
     if (hasDragged && !robotEl.classList.contains('drag-free')) {
-      robotEl.classList.add('drag-free');
+      const sidebar = document.getElementById('sidebar');
+      const sidebarRect = sidebar?.getBoundingClientRect();
+      if (robotLocation === 'sidebar') {
+        // Left the sidebar? Go drag-free
+        if (sidebarRect && (e.clientX > sidebarRect.right + 20 || e.clientY < sidebarRect.top)) {
+          robotEl.classList.add('drag-free');
+        }
+      } else {
+        // Left the footer overlay? Go drag-free
+        const overlayRect = overlay?.getBoundingClientRect();
+        if (overlayRect && (e.clientX < overlayRect.left - 20 || e.clientY < overlayRect.top - 40)) {
+          robotEl.classList.add('drag-free');
+        }
+      }
     }
 
     if (robotEl.classList.contains('drag-free')) {
       robotEl.style.left = (e.clientX - 34) + 'px';
       robotEl.style.top = (e.clientY - 36) + 'px';
       robotEl.style.bottom = 'auto';
+      robotEl.style.transform = '';
 
       // Highlight valid drop zones
       const sidebar = document.getElementById('sidebar');
@@ -2885,15 +2901,20 @@ function robotInit() {
         e.clientX < sidebarRect.right && e.clientY > sidebarRect.top;
       sidebar.classList.toggle('mascot-drag-hover', isOverSidebar);
       overlay?.classList.toggle('mascot-drag-hover', !isOverSidebar);
+    } else if (robotLocation === 'sidebar') {
+      // In-sidebar drag: move vertically
+      const slot = document.getElementById('sidebar-mascot-slot');
+      const slotH = slot ? slot.clientHeight : 200;
+      const dragStartBottom = parseInt(robotEl.style.bottom) || 0;
+      const newBottom = Math.max(0, Math.min(slotH - 56, dragStartBottom + (dragStartY - e.clientY)));
+      robotEl.style.bottom = newBottom + 'px';
     } else {
-      // Small movement — original in-container drag
-      if (robotLocation === 'footer') {
-        const ow = overlay ? overlay.clientWidth : window.innerWidth;
-        const newLeft = Math.max(4, Math.min(ow - 72, dragStartLeft + deltaX));
-        robotEl.style.left = newLeft + 'px';
-        const liftY = Math.max(0, deltaY);
-        robotEl.style.bottom = liftY + 'px';
-      }
+      // In-footer drag: move horizontally + lift
+      const ow = overlay ? overlay.clientWidth : window.innerWidth;
+      const newLeft = Math.max(4, Math.min(ow - 72, dragStartLeft + deltaX));
+      robotEl.style.left = newLeft + 'px';
+      const liftY = Math.max(0, deltaY);
+      robotEl.style.bottom = liftY + 'px';
     }
   });
 
@@ -2934,9 +2955,10 @@ function robotInit() {
       }
       // Dropped in same zone — reset position
       if (robotLocation === 'sidebar') {
-        robotEl.style.left = '';
+        robotEl.style.left = '50%';
+        robotEl.style.transform = 'translateX(-50%)';
         robotEl.style.top = '';
-        robotEl.style.bottom = '';
+        robotEl.style.bottom = '0px';
         showSpeech(['New spot, nice.', 'I like it here.', 'Fine by me.', 'This works.'][Math.floor(Math.random() * 4)], 2000);
         setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
       } else {
@@ -2985,9 +3007,15 @@ function robotInit() {
           if (!robotOverride) robotNext();
         }
       }
-    } else {
-      // Sidebar drop without drag-free — just resume
-      if (!robotOverride) robotNext();
+    } else if (robotLocation === 'sidebar') {
+      // Sidebar in-container drop — keep where dragged, resume behavior
+      touchInteraction();
+      if (hasDragged) {
+        showSpeech(['This spot works.', 'Better view up here.', 'I can see everything.', 'Cozy.'][Math.floor(Math.random() * 4)], 2000);
+        setTimeout(() => { if (!robotOverride) robotNext(); }, 2000);
+      } else {
+        if (!robotOverride) robotNext();
+      }
     }
   });
 
@@ -3474,13 +3502,23 @@ function robotWalk() {
 }
 
 function robotWalkSidebar() {
-  // In sidebar, do a gentle bob/shuffle in place (limited vertical space)
+  // Walk vertically within the sidebar slot
+  const slot = document.getElementById('sidebar-mascot-slot');
+  if (!slot) return;
+  const slotH = slot.clientHeight;
+  const maxBottom = Math.max(0, slotH - 56);
+  const currentBottom = parseInt(robotEl.style.bottom) || 0;
+  const dest = Math.floor(Math.random() * maxBottom);
+  const distance = Math.abs(dest - currentBottom);
+  const duration = Math.max(2, distance * 0.06);
+
   robotEl.classList.add('walk-anticipate');
   robotTimer = setTimeout(() => {
     robotEl.classList.remove('walk-anticipate');
     robotEl.classList.add('walking');
-    // Short duration shuffle — sidebar space is tight
-    const duration = 1.5 + Math.random() * 2;
+    robotEl.style.transition = `bottom ${duration}s linear`;
+    robotEl.style.bottom = dest + 'px';
+
     robotTimer = setTimeout(() => {
       robotEl.classList.remove('walking');
       robotEl.classList.add('walk-arrive');
