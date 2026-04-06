@@ -458,11 +458,14 @@ fn ensure_notify_script() -> Result<String, String> {
 {marker}
 # Sends Claude Code hook events to PaneStreet via Unix socket.
 # Only fires for sessions running inside PaneStreet (PANESTREET=1 env var).
+# Usage: notify.sh <EventName>   (event name passed as $1 from hook config)
 [ -z "$PANESTREET" ] && cat > /dev/null && exit 0
+EVENT_NAME="${{1:-unknown}}"
 INPUT=$(cat)
 # Use python3 for robust JSON parsing (handles escaped quotes, newlines, unicode)
 python3 -c "
 import json, sys, socket
+event_name = sys.argv[2]
 try:
     d = json.loads(sys.argv[1])
 except Exception:
@@ -472,7 +475,7 @@ def g(k, maxlen=0):
     return v[:maxlen] if maxlen else v
 payload = json.dumps({{
     'cmd': 'hook-event',
-    'event': g('hook_event_name') or 'unknown',
+    'event': event_name or g('hook_event_name') or 'unknown',
     'tool': g('tool_name'),
     'message': g('message'),
     'title': g('title'),
@@ -488,7 +491,7 @@ try:
     s.close()
 except Exception:
     pass
-" "$INPUT" 2>/dev/null || true
+" "$INPUT" "$EVENT_NAME" 2>/dev/null || true
 "#,
         marker = HOOK_MARKER,
         sock = sock_path.display()
@@ -525,17 +528,17 @@ pub fn install_claude_hooks() -> Result<bool, String> {
         .or_insert_with(|| Value::Object(serde_json::Map::new()));
     let hooks_obj = hooks.as_object_mut().ok_or("hooks is not an object")?;
 
-    // Claude Code hook format: { "matcher": "", "hooks": [{ "type": "command", "command": "..." }] }
-    let ps_hook_entry = serde_json::json!({
-        "matcher": "",
-        "hooks": [{
-            "type": "command",
-            "command": format!("bash {}", script_path),
-        }]
-    });
-
     // Install hooks for key events, preserving existing hooks
+    // Each event gets the event name passed as $1 so the script doesn't rely on JSON payload
     for event_name in &["Notification", "Stop", "SubagentStop"] {
+        let ps_hook_entry = serde_json::json!({
+            "matcher": "",
+            "hooks": [{
+                "type": "command",
+                "command": format!("bash {} {}", script_path, event_name),
+            }]
+        });
+
         let arr = hooks_obj.entry(event_name.to_string())
             .or_insert_with(|| Value::Array(Vec::new()));
         if let Some(arr) = arr.as_array_mut() {
@@ -552,7 +555,7 @@ pub fn install_claude_hooks() -> Result<bool, String> {
                     .unwrap_or(false);
                 !is_ps
             });
-            arr.push(ps_hook_entry.clone());
+            arr.push(ps_hook_entry);
         }
     }
 
