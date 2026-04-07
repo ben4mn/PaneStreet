@@ -217,29 +217,37 @@ pub fn get_process_cwd(session_id: String) -> Result<Option<String>, String> {
         None => return Err("No PID available for session".to_string()),
     };
 
-    // On macOS, use lsof to get the CWD of the shell process.
-    // The shell PID from portable_pty is the direct child (login shell).
-    // When the user runs `cd`, the shell's CWD changes and lsof reflects it.
-    let output = std::process::Command::new("lsof")
-        .args(["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"])
-        .output()
-        .map_err(|e| format!("lsof failed for PID {}: {}", pid, e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("lsof returned error for PID {}: {}", pid, stderr));
+    // Use native macOS proc_pidinfo to get the CWD directly from the kernel.
+    // This avoids spawning lsof every poll and doesn't trigger TCC permission prompts.
+    use std::mem;
+    let mut vpi: libc::proc_vnodepathinfo = unsafe { mem::zeroed() };
+    let ret = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            &mut vpi as *mut _ as *mut libc::c_void,
+            mem::size_of::<libc::proc_vnodepathinfo>() as libc::c_int,
+        )
+    };
+    if ret <= 0 {
+        return Err(format!("proc_pidinfo failed for PID {}", pid));
     }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        if let Some(path) = line.strip_prefix('n') {
-            if path.starts_with('/') {
-                return Ok(Some(path.to_string()));
-            }
-        }
+    // vip_path is [[c_char; 32]; 32] (libc workaround for [c_char; 1024])
+    let flat_path: &[u8] = unsafe {
+        std::slice::from_raw_parts(
+            vpi.pvi_cdir.vip_path.as_ptr() as *const u8,
+            1024,
+        )
+    };
+    let len = flat_path.iter().position(|&b| b == 0).unwrap_or(1024);
+    let path = std::str::from_utf8(&flat_path[..len])
+        .map_err(|e| format!("Invalid UTF-8 in CWD for PID {}: {}", pid, e))?
+        .to_string();
+    if path.is_empty() {
+        return Err(format!("Empty CWD for PID {}", pid));
     }
-
-    Err(format!("lsof returned no CWD for PID {}. Output: {}", pid, stdout))
+    Ok(Some(path))
 }
 
 #[tauri::command]

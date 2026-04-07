@@ -31,7 +31,13 @@ pub fn read_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<Dir
     let show_hidden = show_hidden.unwrap_or(false);
     let mut entries = Vec::new();
 
-    let read_dir = fs::read_dir(dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
+    let read_dir = match fs::read_dir(dir_path) {
+        Ok(rd) => rd,
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            return Err(format!("PERMISSION_DENIED:{}", path));
+        }
+        Err(e) => return Err(format!("Failed to read directory: {}", e)),
+    };
 
     for entry in read_dir.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
@@ -90,7 +96,13 @@ pub fn read_file_content(path: String, max_bytes: Option<u64>) -> Result<FileCon
         });
     }
 
-    let bytes = fs::read(&path).map_err(|e| format!("Failed to read file: {}", e))?;
+    let bytes = match fs::read(&path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            return Err(format!("PERMISSION_DENIED:{}", path));
+        }
+        Err(e) => return Err(format!("Failed to read file: {}", e)),
+    };
 
     // Check if binary (contains null bytes in first 8KB)
     let check_len = bytes.len().min(8192);

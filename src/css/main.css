@@ -1138,12 +1138,12 @@ html, body {
 }
 #sidebar.collapsed #sidebar-mascot-slot { display: none; }
 
-/* Mascot when inside sidebar — absolute positioned, walks vertically */
+/* Mascot when inside sidebar — absolute positioned, walks horizontally */
 #sidebar-mascot-slot #footer-mascot {
   position: absolute;
   bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  transform: none;
   top: auto;
   width: 52px;
   height: 56px;

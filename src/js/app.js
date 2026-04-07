@@ -2601,8 +2601,10 @@ function moveRobotTo(location, showQuote = true) {
   if (location === 'sidebar') {
     slot.appendChild(robotEl);
     robotEl.style.transition = 'none';
-    robotEl.style.left = '50%';
-    robotEl.style.transform = 'translateX(-50%)';
+    const slotWidth = slot.clientWidth || 80;
+    const robotWidth = 52;
+    robotEl.style.left = Math.floor((slotWidth - robotWidth) / 2) + 'px';
+    robotEl.style.transform = 'none';
     robotEl.style.bottom = '0px';
     robotEl.style.top = '';
     if (showQuote) {
@@ -3293,7 +3295,7 @@ function scheduleSpecialEvent() {
   clearTimeout(specialEventScheduleTimer);
   const delay = (4 + Math.random() * 2) * 60 * 1000; // 4-6 min
   specialEventScheduleTimer = setTimeout(() => {
-    if (!robotEl || robotOverride || robotLocation === 'sidebar' || localStorage.getItem('ps-robot-enabled') === 'false') {
+    if (!robotEl || robotOverride || robotLocation === 'sidebar' || localStorage.getItem('ps-robot-enabled') === 'false' || localStorage.getItem('ps-robot-standstill') === 'true') {
       scheduleSpecialEvent(); return;
     }
     clearTimeout(robotTimer);
@@ -3443,10 +3445,10 @@ function robotNext() {
   const idlePause = (freq.idleMin + Math.random() * (freq.idleMax - freq.idleMin)) * 1000;
   robotTimer = setTimeout(() => {
     if (!robotEl || robotOverride) return;
-    if (Math.random() < freq.walkChance) {
-      robotWalk();
-    } else {
+    if (localStorage.getItem('ps-robot-standstill') === 'true' || Math.random() >= freq.walkChance) {
       robotDoActivity();
+    } else {
+      robotWalk();
     }
   }, idlePause);
 }
@@ -3512,18 +3514,26 @@ function robotWalk() {
 }
 
 function robotWalkSidebar() {
-  // Shuffle near the bottom of the sidebar slot (max 40px up)
-  const currentBottom = parseInt(robotEl.style.bottom) || 0;
-  const dest = Math.floor(Math.random() * 40);
-  const distance = Math.abs(dest - currentBottom);
+  // Walk horizontally across the sidebar width
+  const slot = document.getElementById('sidebar-mascot-slot');
+  const slotWidth = slot ? slot.clientWidth : 80;
+  const robotWidth = 52; // mascot width in sidebar
+  const maxLeft = Math.max(0, slotWidth - robotWidth);
+  const currentLeft = parseInt(robotEl.style.left) || Math.floor(maxLeft / 2);
+  const dest = Math.floor(Math.random() * maxLeft);
+  const distance = Math.abs(dest - currentLeft);
   const duration = Math.max(2, distance * 0.06);
+
+  // Face the right direction
+  robotFacingLeft = dest < currentLeft;
+  robotEl.classList.toggle('face-left', robotFacingLeft);
 
   robotEl.classList.add('walk-anticipate');
   robotTimer = setTimeout(() => {
     robotEl.classList.remove('walk-anticipate');
     robotEl.classList.add('walking');
-    robotEl.style.transition = `bottom ${duration}s linear`;
-    robotEl.style.bottom = dest + 'px';
+    robotEl.style.transition = `left ${duration}s linear`;
+    robotEl.style.left = dest + 'px';
 
     robotTimer = setTimeout(() => {
       robotEl.classList.remove('walking');

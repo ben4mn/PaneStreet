@@ -288,7 +288,12 @@ async function renderDirectory(path, container, depth) {
       }
     }
   } catch (err) {
-    container.innerHTML = `<div class="fv-error">Error: ${err}</div>`;
+    const errStr = String(err);
+    if (errStr.includes('PERMISSION_DENIED')) {
+      container.innerHTML = '<div class="fv-empty">No access to this folder</div>';
+    } else {
+      container.innerHTML = `<div class="fv-error">Error: ${err}</div>`;
+    }
   }
 }
 
@@ -339,7 +344,12 @@ async function loadFileContent(filePath, ext) {
     content.style.display = '';
     tree.style.display = 'none';
   } catch (err) {
-    content.innerHTML = `<div class="fv-error">Failed to load: ${err}</div>`;
+    const errStr = String(err);
+    if (errStr.includes('PERMISSION_DENIED')) {
+      content.innerHTML = '<div class="fv-empty">No access to this file</div>';
+    } else {
+      content.innerHTML = `<div class="fv-error">Failed to load: ${err}</div>`;
+    }
     content.style.display = '';
     tree.style.display = 'none';
     toggleBtn.style.display = 'none';

@@ -143,6 +143,7 @@ function checkSettingsDirty() {
     notifySound: String(container.querySelector('#pref-notify-sound')?.checked ?? true),
     robotEnabled: String(container.querySelector('#pref-robot')?.checked ?? true),
     robotFrequency: container.querySelector('#pref-robot-frequency')?.value || 'medium',
+    robotStandStill: String(container.querySelector('#pref-robot-standstill')?.checked ?? false),
   };
   return JSON.stringify(current) !== JSON.stringify(savedSettingsSnapshot);
 }
@@ -249,6 +250,7 @@ async function renderSettingsTab(tab) {
     const notifySound = localStorage.getItem('ps-notify-sound') !== 'false';
     const robotEnabled = localStorage.getItem('ps-robot-enabled') !== 'false';
     const robotFrequency = localStorage.getItem('ps-robot-frequency') || 'medium';
+    const robotStandStill = localStorage.getItem('ps-robot-standstill') === 'true';
 
     container.innerHTML = `
       <div class="settings-group">
@@ -435,6 +437,17 @@ async function renderSettingsTab(tab) {
 
           <div class="setting-row-inline" style="padding-top:8px">
             <div>
+              <div class="setting-label">Mascot stands still</div>
+              <div class="setting-description">Keep the mascot in place — no walking or roaming</div>
+            </div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-robot-standstill" ${robotStandStill ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row-inline" style="padding-top:8px">
+            <div>
               <div class="setting-label">Claude Code hooks</div>
               <div class="setting-description">Auto-install hooks so Pane reacts to Claude Code events</div>
             </div>
@@ -507,6 +520,7 @@ async function renderSettingsTab(tab) {
       const robotChecked = container.querySelector('#pref-robot').checked;
       localStorage.setItem('ps-robot-enabled', robotChecked);
       localStorage.setItem('ps-robot-frequency', container.querySelector('#pref-robot-frequency').value);
+      localStorage.setItem('ps-robot-standstill', container.querySelector('#pref-robot-standstill').checked);
       // Claude Code hooks toggle
       const hooksEnabled = container.querySelector('#pref-hooks').checked;
       if (hooksEnabled) {
