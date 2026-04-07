@@ -1,6 +1,7 @@
 import { TerminalSession } from './terminal.js';
 import { togglePanel, hidePanel, isAnyPanelActive, setOnHide, loadSavedTheme, setFocusedCwd } from './config-panels.js';
 import { initFileViewer, toggleFileViewer, updateFileViewerCwd, hideFileViewer, isFileViewerVisible, refreshDiffStats } from './file-viewer.js';
+import { initTrayIcon } from './tray-icon.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -4028,6 +4029,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupStatusListener();
   initFileViewer();
   loadSavedTheme();
+  initTrayIcon();
   setupFreeformDrag();
   setupFreeformResize();
   setupGridGutterDrag();
