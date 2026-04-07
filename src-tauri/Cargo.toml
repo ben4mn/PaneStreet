@@ -1,6 +1,6 @@
 [package]
 name = "pane-street"
-version = "0.4.40"
+version = "0.4.41"
 edition = "2021"
 
 [lib]
@@ -11,7 +11,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
@@ -26,6 +26,10 @@ dirs = "6"
 git2 = { version = "0.19", features = ["vendored-libgit2"] }
 keyring = { version = "3", features = ["apple-native"] }
 libc = "0.2"
+base64 = "0.22"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage", "NSRunningApplication"] }
+objc2-foundation = { version = "0.3", features = ["NSData"] }
 
 [profile.release]
 strip = true

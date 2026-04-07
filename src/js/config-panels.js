@@ -1,4 +1,5 @@
 const { invoke } = window.__TAURI__.core;
+import { getProfiles, saveProfile, deleteProfile } from './session-profiles.js';
 
 let activePanel = null;
 let onHideCallback = null;
@@ -190,6 +191,7 @@ async function renderSettingsPanel() {
     </div>
     <div class="settings-tabs">
       <button class="settings-tab ${currentSettingsTab === 'general' ? 'active' : ''}" data-tab="general">General</button>
+      <button class="settings-tab ${currentSettingsTab === 'profiles' ? 'active' : ''}" data-tab="profiles">Profiles</button>
       <button class="settings-tab ${currentSettingsTab === 'keys' ? 'active' : ''}" data-tab="keys">Keys</button>
       <button class="settings-tab ${currentSettingsTab === 'theme' ? 'active' : ''}" data-tab="theme">Theme</button>
       <button class="settings-tab ${currentSettingsTab === 'auth' ? 'active' : ''}" data-tab="auth">Auth</button>
@@ -238,6 +240,7 @@ async function renderSettingsTab(tab) {
     const fontSize = localStorage.getItem('ps-font-size') || '14';
     const shell = localStorage.getItem('ps-shell') || '';
     const defaultDir = localStorage.getItem('ps-default-dir') || '';
+    const scrollback = localStorage.getItem('ps-scrollback') || '5000';
     const gitShowBranch = localStorage.getItem('ps-git-show-branch') !== 'false';
     const gitShowWorktree = localStorage.getItem('ps-git-show-worktree') !== 'false';
     const gitShowDirty = localStorage.getItem('ps-git-show-dirty') !== 'false';
@@ -280,6 +283,15 @@ async function renderSettingsTab(tab) {
           <div class="setting-browse-row">
             <input type="text" class="form-input" id="pref-default-dir" value="${defaultDir}" placeholder="~/Projects" style="flex:1" />
             <button class="setting-browse-btn" id="browse-dir">Browse</button>
+          </div>
+        </div>
+
+        <div class="setting-row-stacked">
+          <div class="setting-label">Scrollback Buffer</div>
+          <div class="setting-description">Lines kept in terminal history (applies to new terminals)</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="range" id="pref-scrollback" min="500" max="50000" step="500" value="${scrollback}" style="flex:1" />
+            <span id="scrollback-value" style="min-width:52px;font-variant-numeric:tabular-nums;color:var(--text-secondary)">${scrollback}</span>
           </div>
         </div>
       </div>
@@ -410,6 +422,22 @@ async function renderSettingsTab(tab) {
       </div>
 
       <div class="settings-group">
+        <div class="setting-section-title">Claude Code</div>
+        <div class="setting-row-stacked">
+          <div class="setting-row-inline">
+            <div>
+              <div class="setting-label">Auto-start Claude in new terminals</div>
+              <div class="setting-description">Automatically run <code>claude</code> when a new terminal opens. Use Cmd+Shift+N to always create a Claude session.</div>
+            </div>
+            <label class="setting-switch">
+              <input type="checkbox" id="pref-claude-autostart" ${localStorage.getItem('ps-claude-autostart') === 'true' ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-group">
         <div class="setting-section-title">Mascot</div>
         <div class="setting-row-stacked">
           <div class="setting-row-inline">
@@ -477,6 +505,15 @@ async function renderSettingsTab(tab) {
       previewEl.style.fontSize = val + 'px';
     });
 
+    // Scrollback buffer range
+    const scrollbackEl = container.querySelector('#pref-scrollback');
+    const scrollbackValueEl = container.querySelector('#scrollback-value');
+    if (scrollbackEl) {
+      scrollbackEl.addEventListener('input', () => {
+        scrollbackValueEl.textContent = scrollbackEl.value;
+      });
+    }
+
     // Git poll interval range
     const gitPollEl = container.querySelector('#pref-git-poll');
     const gitPollValueEl = container.querySelector('#git-poll-value');
@@ -507,6 +544,7 @@ async function renderSettingsTab(tab) {
       localStorage.setItem('ps-font-size', rangeEl.value);
       localStorage.setItem('ps-shell', container.querySelector('#pref-shell').value);
       localStorage.setItem('ps-default-dir', container.querySelector('#pref-default-dir').value);
+      if (scrollbackEl) localStorage.setItem('ps-scrollback', scrollbackEl.value);
       localStorage.setItem('ps-git-show-branch', container.querySelector('#pref-git-branch').checked);
       localStorage.setItem('ps-git-show-worktree', container.querySelector('#pref-git-worktree').checked);
       localStorage.setItem('ps-git-show-dirty', container.querySelector('#pref-git-dirty').checked);
@@ -518,6 +556,7 @@ async function renderSettingsTab(tab) {
       localStorage.setItem('ps-notify-agent', container.querySelector('#pref-notify-agent').checked);
       localStorage.setItem('ps-notify-sound', container.querySelector('#pref-notify-sound').checked);
       const robotChecked = container.querySelector('#pref-robot').checked;
+      localStorage.setItem('ps-claude-autostart', container.querySelector('#pref-claude-autostart').checked);
       localStorage.setItem('ps-robot-enabled', robotChecked);
       localStorage.setItem('ps-robot-frequency', container.querySelector('#pref-robot-frequency').value);
       localStorage.setItem('ps-robot-standstill', container.querySelector('#pref-robot-standstill').checked);
@@ -656,6 +695,9 @@ async function renderSettingsTab(tab) {
       container.innerHTML = `<div class="empty-state">Failed to check auth status: ${err}</div>`;
     }
 
+  } else if (tab === 'profiles') {
+    renderProfilesTab(container);
+
   } else if (tab === 'keys') {
     renderKeysTab(container);
 
@@ -716,22 +758,37 @@ async function renderSettingsTab(tab) {
       const el = container.querySelector('#changelog-content');
       if (!el) return;
       try {
-        const res = await fetch('https://api.github.com/repos/ben4mn/PaneStreet/releases?per_page=5');
+        const res = await fetch('https://api.github.com/repos/ben4mn/PaneStreet/releases?per_page=10');
         if (!res.ok) throw new Error('fetch failed');
         const releases = await res.json();
         if (!releases.length) { el.innerHTML = '<div class="setting-description" style="color:var(--text-muted)">No releases found.</div>'; return; }
-        el.innerHTML = releases.map(r => {
+        el.innerHTML = releases.map((r, i) => {
           const date = new Date(r.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
           const body = r.body ? formatChangelogBody(r.body) : '<span style="color:var(--text-muted)">No notes.</span>';
+          const collapsed = i > 0;
           return `
-            <div class="changelog-entry">
-              <div class="changelog-header">
+            <div class="changelog-entry ${collapsed ? 'collapsed' : ''}">
+              <div class="changelog-header" style="cursor:pointer">
+                <span class="changelog-expand-icon">${collapsed ? '&#9654;' : '&#9660;'}</span>
                 <span class="changelog-version">${r.tag_name}</span>
                 <span class="changelog-date">${date}</span>
               </div>
-              <div class="changelog-body">${body}</div>
+              <div class="changelog-body" ${collapsed ? 'style="display:none"' : ''}>${body}</div>
             </div>`;
         }).join('');
+
+        // Expand/collapse click handlers
+        el.querySelectorAll('.changelog-header').forEach(header => {
+          header.addEventListener('click', () => {
+            const entry = header.closest('.changelog-entry');
+            const body = entry.querySelector('.changelog-body');
+            const icon = entry.querySelector('.changelog-expand-icon');
+            const isCollapsed = entry.classList.contains('collapsed');
+            entry.classList.toggle('collapsed');
+            body.style.display = isCollapsed ? '' : 'none';
+            icon.innerHTML = isCollapsed ? '&#9660;' : '&#9654;';
+          });
+        });
       } catch {
         el.innerHTML = '<div class="setting-description" style="color:var(--text-muted)">Could not load release notes.</div>';
       }
@@ -927,6 +984,134 @@ function formatShortcut(s) {
   else if (s.key === '1-9') parts.push('1\u20139');
   else parts.push(s.key.toUpperCase());
   return parts.join('');
+}
+
+function renderProfilesTab(container) {
+  const profiles = getProfiles();
+
+  const profileCards = profiles.length === 0
+    ? '<p style="color:var(--text-muted);font-size:var(--font-size-sm);padding:8px 0;">No profiles yet. Create one to quick-launch terminals with preset settings.</p>'
+    : profiles.map(p => `
+      <div class="profile-card" data-name="${p.name}">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;color:var(--text-primary)">${p.name}</div>
+          <div style="font-size:var(--font-size-xs);color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            ${p.cwd || 'Default dir'}${p.startupCommand ? ' · ' + p.startupCommand : ''}${p.autoStartClaude ? ' · Claude' : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button class="fv-action-btn profile-launch-btn" data-name="${p.name}">Launch</button>
+          <button class="fv-action-btn profile-delete-btn" data-name="${p.name}">Delete</button>
+        </div>
+      </div>
+    `).join('');
+
+  container.innerHTML = `
+    <div class="settings-group">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="setting-section-title" style="margin:0">Session Profiles</div>
+        <button class="settings-save-btn" id="new-profile-btn">New Profile</button>
+      </div>
+      <div id="profiles-list">${profileCards}</div>
+    </div>
+
+    <div id="profile-form" style="display:none">
+      <div class="settings-group">
+        <div class="setting-section-title">New Profile</div>
+        <div class="setting-row-stacked">
+          <div class="setting-label">Name</div>
+          <input type="text" class="form-input" id="profile-name" placeholder="My Project" />
+        </div>
+        <div class="setting-row-stacked">
+          <div class="setting-label">Shell</div>
+          <input type="text" class="form-input" id="profile-shell" placeholder="/bin/zsh (leave empty for default)" />
+        </div>
+        <div class="setting-row-stacked">
+          <div class="setting-label">Working Directory</div>
+          <div class="setting-browse-row">
+            <input type="text" class="form-input" id="profile-cwd" placeholder="~/Projects" style="flex:1" />
+            <button class="setting-browse-btn" id="profile-browse">Browse</button>
+          </div>
+        </div>
+        <div class="setting-row-stacked">
+          <div class="setting-label">Startup Command</div>
+          <input type="text" class="form-input" id="profile-cmd" placeholder="npm run dev" />
+        </div>
+        <div class="setting-row-stacked">
+          <div class="setting-row-inline">
+            <div>
+              <div class="setting-label">Auto-start Claude</div>
+              <div class="setting-description">Run claude automatically on launch</div>
+            </div>
+            <label class="setting-switch">
+              <input type="checkbox" id="profile-claude" />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="settings-save-btn" id="profile-save-btn">Save Profile</button>
+          <button class="fv-action-btn" id="profile-cancel-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // New profile button
+  container.querySelector('#new-profile-btn').onclick = () => {
+    container.querySelector('#profile-form').style.display = '';
+    container.querySelector('#new-profile-btn').style.display = 'none';
+    container.querySelector('#profile-name').focus();
+  };
+
+  // Cancel
+  container.querySelector('#profile-cancel-btn').onclick = () => {
+    container.querySelector('#profile-form').style.display = 'none';
+    container.querySelector('#new-profile-btn').style.display = '';
+  };
+
+  // Browse
+  container.querySelector('#profile-browse').onclick = async () => {
+    try {
+      const result = await invoke('plugin:dialog|open', {
+        options: { directory: true, multiple: false, title: 'Choose Directory' },
+      });
+      if (result) container.querySelector('#profile-cwd').value = result;
+    } catch {}
+  };
+
+  // Save
+  container.querySelector('#profile-save-btn').onclick = () => {
+    const name = container.querySelector('#profile-name').value.trim();
+    if (!name) return;
+    saveProfile({
+      name,
+      shell: container.querySelector('#profile-shell').value.trim(),
+      cwd: container.querySelector('#profile-cwd').value.trim(),
+      startupCommand: container.querySelector('#profile-cmd').value.trim(),
+      autoStartClaude: container.querySelector('#profile-claude').checked,
+    });
+    renderProfilesTab(container); // re-render
+  };
+
+  // Delete buttons
+  container.querySelectorAll('.profile-delete-btn').forEach(btn => {
+    btn.onclick = () => {
+      deleteProfile(btn.dataset.name);
+      renderProfilesTab(container);
+    };
+  });
+
+  // Launch buttons dispatch event (app.js handles session creation)
+  container.querySelectorAll('.profile-launch-btn').forEach(btn => {
+    btn.onclick = () => {
+      const profile = profiles.find(p => p.name === btn.dataset.name);
+      if (profile) {
+        window.dispatchEvent(new CustomEvent('launch-profile', { detail: profile }));
+        hidePanel();
+      }
+    };
+  });
 }
 
 function renderKeysTab(container) {

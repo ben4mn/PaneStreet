@@ -1,3 +1,4 @@
+use base64::{Engine as _, engine::general_purpose};
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
@@ -156,6 +157,13 @@ pub fn open_in_finder(path: String) -> Result<(), String> {
         .spawn();
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn read_file_base64(path: String) -> Result<String, String> {
+    let bytes = fs::read(&path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+    Ok(general_purpose::STANDARD.encode(&bytes))
 }
 
 #[tauri::command]

@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nickel-org/nickel/refs/heads/master/schema/tauri-conf.json",
   "productName": "PaneStreet",
-  "version": "0.4.40",
+  "version": "0.4.41",
   "identifier": "com.panestreet.app",
   "build": {
     "frontendDist": "../src"
@@ -24,7 +24,6 @@
             "notification:allow-is-permission-granted",
             "updater:default",
             "process:allow-restart",
-            "core:tray:default",
             "core:image:default"
           ]
         }

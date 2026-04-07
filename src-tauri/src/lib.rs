@@ -1,5 +1,6 @@
 mod auth_manager;
 mod config_reader;
+mod dock_icon;
 mod file_viewer;
 mod pty_manager;
 mod socket_server;
@@ -46,11 +47,17 @@ pub fn run() {
             auth_manager::delete_api_key,
             file_viewer::read_directory,
             file_viewer::read_file_content,
+            file_viewer::read_file_base64,
             file_viewer::open_in_finder,
             file_viewer::open_with_default,
             pty_manager::get_process_cwd,
             pty_manager::get_listening_ports,
             pty_manager::get_pr_status,
+            dock_icon::set_dock_icon,
+            worktree_manager::git_stash_list,
+            worktree_manager::git_stash_push,
+            worktree_manager::git_stash_pop,
+            worktree_manager::git_stash_drop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

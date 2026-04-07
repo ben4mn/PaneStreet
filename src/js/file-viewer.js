@@ -1,4 +1,6 @@
 const { invoke } = window.__TAURI__.core;
+import { isImageFile, getImageMimeType } from './file-preview-utils.js';
+import { renderSplitDiff } from './diff-viewer.js';
 
 let currentPath = null;
 let expandedDirs = new Set();
@@ -319,6 +321,17 @@ async function loadFileContent(filePath, ext) {
   const toggleBtn = document.getElementById('fv-toggle-view');
 
   try {
+    // Image preview — render inline instead of showing binary placeholder
+    if (isImageFile(filePath)) {
+      const base64 = await invoke('read_file_base64', { path: filePath });
+      const mime = getImageMimeType(filePath);
+      content.innerHTML = `<div class="fv-image-preview"><img src="data:${mime};base64,${base64}" alt="${filePath.split('/').pop()}" /></div>`;
+      content.style.display = '';
+      tree.style.display = 'none';
+      toggleBtn.style.display = 'none';
+      return;
+    }
+
     const result = await invoke('read_file_content', { path: filePath });
 
     if (result.is_binary) {
@@ -470,7 +483,18 @@ async function renderCodeContent(text, ext, container) {
     nextBtn.textContent = '\u2193 Next';
     nextBtn.addEventListener('click', () => jumpToDiffHunk(pre, 1));
 
+    const splitBtn = document.createElement('button');
+    splitBtn.className = 'fv-action-btn';
+    splitBtn.textContent = 'Split';
+    splitBtn.addEventListener('click', () => {
+      // Replace inline diff with split view
+      pre.remove();
+      diffNav.remove();
+      renderSplitDiff(container, currentDiffHunks);
+    });
+
     diffNav.appendChild(label);
+    diffNav.appendChild(splitBtn);
     diffNav.appendChild(prevBtn);
     diffNav.appendChild(nextBtn);
     container.appendChild(diffNav);

@@ -1,6 +1,7 @@
 import { Terminal } from '../vendor/xterm/xterm.mjs';
 import { FitAddon } from '../vendor/xterm/addon-fit.mjs';
 import { WebLinksAddon } from '../vendor/xterm/addon-web-links.mjs';
+import { SearchAddon } from '../vendor/xterm/addon-search.mjs';
 
 const { invoke, Channel } = window.__TAURI__.core;
 
@@ -52,6 +53,7 @@ export class TerminalSession {
       fontSize: parseInt(localStorage.getItem('ps-font-size') || '14'),
       fontFamily: '"SF Mono", "Cascadia Code", "JetBrains Mono", "Menlo", monospace',
       lineHeight: 1.1,
+      scrollback: parseInt(localStorage.getItem('ps-scrollback') || '5000'),
       theme: getSavedTerminalTheme(),
     });
 
@@ -63,6 +65,10 @@ export class TerminalSession {
         try { window.__TAURI__.opener.openUrl(url); } catch (err) { console.warn('Failed to open URL:', err); }
       }
     }));
+
+    // Search addon
+    this.searchAddon = new SearchAddon();
+    this.term.loadAddon(this.searchAddon);
 
     // File path links: Cmd+click opens local files/directories
     const filePathRegex = /(?:^|\s)((?:\/[\w.@-]+)+(?:\.[\w]+)?(?::(\d+)(?::(\d+))?)?)/g;
@@ -252,11 +258,26 @@ export class TerminalSession {
     this.term.focus();
   }
 
+  findNext(query, opts) {
+    return this.searchAddon.findNext(query, opts);
+  }
+
+  findPrevious(query, opts) {
+    return this.searchAddon.findPrevious(query, opts);
+  }
+
+  clearSearch() {
+    this.searchAddon.clearDecorations();
+  }
+
   /**
    * Serialize the terminal scrollback buffer (last N lines) as plain text.
    * Used for session persistence across restarts.
    */
-  getScrollback(maxLines = 1000) {
+  getScrollback(maxLines) {
+    if (maxLines === undefined) {
+      maxLines = parseInt(localStorage.getItem('ps-scrollback-save') || '1000');
+    }
     const buffer = this.term.buffer.active;
     const totalLines = buffer.length;
     const startLine = Math.max(0, totalLines - maxLines);

@@ -610,3 +610,78 @@ pub fn get_file_diff(cwd: String, file_path: String) -> Result<Option<FileDiffDe
         hunks,
     }))
 }
+
+// --- Git Stash ---
+
+#[derive(Clone, Serialize)]
+pub struct StashEntry {
+    pub index: usize,
+    pub message: String,
+    pub date: String,
+}
+
+#[tauri::command]
+pub fn git_stash_list(cwd: String) -> Result<Vec<StashEntry>, String> {
+    let output = std::process::Command::new("git")
+        .args(["stash", "list", "--format=%gd|||%gs|||%ci"])
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| format!("Failed to run git stash list: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let entries: Vec<StashEntry> = stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .enumerate()
+        .map(|(i, line)| {
+            let parts: Vec<&str> = line.splitn(3, "|||").collect();
+            StashEntry {
+                index: i,
+                message: parts.get(1).unwrap_or(&"").to_string(),
+                date: parts.get(2).unwrap_or(&"").to_string(),
+            }
+        })
+        .collect();
+
+    Ok(entries)
+}
+
+#[tauri::command]
+pub fn git_stash_push(cwd: String, message: Option<String>) -> Result<(), String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["stash", "push"]).current_dir(&cwd);
+    if let Some(msg) = message {
+        cmd.args(["-m", &msg]);
+    }
+    let output = cmd.output().map_err(|e| format!("Failed to run git stash push: {}", e))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_stash_pop(cwd: String, index: usize) -> Result<(), String> {
+    let output = std::process::Command::new("git")
+        .args(["stash", "pop", &format!("stash@{{{}}}", index)])
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| format!("Failed to run git stash pop: {}", e))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_stash_drop(cwd: String, index: usize) -> Result<(), String> {
+    let output = std::process::Command::new("git")
+        .args(["stash", "drop", &format!("stash@{{{}}}", index)])
+        .current_dir(&cwd)
+        .output()
+        .map_err(|e| format!("Failed to run git stash drop: {}", e))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+    Ok(())
+}

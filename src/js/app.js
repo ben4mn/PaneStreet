@@ -1,7 +1,11 @@
 import { TerminalSession } from './terminal.js';
 import { togglePanel, hidePanel, isAnyPanelActive, setOnHide, loadSavedTheme, setFocusedCwd } from './config-panels.js';
 import { initFileViewer, toggleFileViewer, updateFileViewerCwd, hideFileViewer, isFileViewerVisible, refreshDiffStats } from './file-viewer.js';
-import { initTrayIcon } from './tray-icon.js';
+import { initDockIcon } from './dock-icon.js';
+import { showCommandPalette, hideCommandPalette, registerPaletteAction, initCommandPalette } from './command-palette.js';
+import { getProfiles } from './session-profiles.js';
+import { getSnapshots, saveSnapshot } from './layout-snapshots.js';
+import { groupNotifications } from './notification-utils.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -1107,6 +1111,26 @@ async function createSession(restoreCwd, restoreScrollback) {
     setFocus(sessions.length - 1);
   });
 
+  // Auto-start Claude if enabled (skip for restored sessions)
+  if (!restoreScrollback && localStorage.getItem('ps-claude-autostart') === 'true') {
+    setTimeout(() => {
+      const data = Array.from(new TextEncoder().encode('claude\r'));
+      invoke('write_to_pty', { sessionId: session.id, data });
+    }, 300);
+  }
+
+  return session;
+}
+
+async function createClaudeSession() {
+  const session = await createSession();
+  // Always start Claude regardless of auto-start setting
+  if (localStorage.getItem('ps-claude-autostart') !== 'true') {
+    setTimeout(() => {
+      const data = Array.from(new TextEncoder().encode('claude\r'));
+      invoke('write_to_pty', { sessionId: session.id, data });
+    }, 300);
+  }
   return session;
 }
 
@@ -1191,6 +1215,72 @@ async function reopenLastClosed() {
       });
     }, 500);
   }
+}
+
+// --- Terminal Search Bar ---
+
+function toggleSearchBar(index) {
+  if (index < 0 || index >= sessions.length) return;
+  const session = sessions[index];
+  const pane = session.pane;
+  let bar = pane.querySelector('.pane-search-bar');
+
+  if (bar) {
+    // Toggle off
+    bar.remove();
+    session.terminal.clearSearch();
+    session.terminal.focus();
+    return;
+  }
+
+  // Create search bar
+  bar = document.createElement('div');
+  bar.className = 'pane-search-bar';
+  bar.innerHTML = `
+    <input type="text" class="pane-search-input" placeholder="Find..." spellcheck="false" />
+    <button class="pane-search-btn pane-search-prev" title="Previous (Shift+Enter)">&#9650;</button>
+    <button class="pane-search-btn pane-search-next" title="Next (Enter)">&#9660;</button>
+    <button class="pane-search-btn pane-search-close" title="Close (Escape)">&times;</button>
+  `;
+
+  const body = pane.querySelector('.pane-body') || pane;
+  body.style.position = 'relative';
+  body.appendChild(bar);
+
+  const input = bar.querySelector('.pane-search-input');
+  input.focus();
+
+  const doSearch = (dir) => {
+    const q = input.value;
+    if (!q) return;
+    if (dir === 'prev') session.terminal.findPrevious(q);
+    else session.terminal.findNext(q);
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      doSearch(e.shiftKey ? 'prev' : 'next');
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      bar.remove();
+      session.terminal.clearSearch();
+      session.terminal.focus();
+    }
+  });
+
+  input.addEventListener('input', () => {
+    if (input.value) session.terminal.findNext(input.value);
+    else session.terminal.clearSearch();
+  });
+
+  bar.querySelector('.pane-search-next').onclick = () => doSearch('next');
+  bar.querySelector('.pane-search-prev').onclick = () => doSearch('prev');
+  bar.querySelector('.pane-search-close').onclick = () => {
+    bar.remove();
+    session.terminal.clearSearch();
+    session.terminal.focus();
+  };
 }
 
 // --- Minimize / Restore / Maximize ---
@@ -1800,27 +1890,150 @@ async function toggleFooterExpand() {
     footer.style.minHeight = footerExpandedHeight + 'px';
   }
   graph.style.display = '';
-  graph.innerHTML = '<span class="branch-graph-loading">Loading...</span>';
+
+  // Add tab bar if not present
+  if (!graph.querySelector('.footer-tabs')) {
+    const tabs = document.createElement('div');
+    tabs.className = 'footer-tabs';
+    tabs.innerHTML = `
+      <button class="footer-tab active" data-ftab="branches">Branches</button>
+      <button class="footer-tab" data-ftab="stashes">Stashes</button>
+    `;
+    const content = document.createElement('div');
+    content.className = 'footer-tab-content';
+    content.id = 'footer-tab-content';
+    graph.innerHTML = '';
+    graph.appendChild(tabs);
+    graph.appendChild(content);
+
+    tabs.querySelectorAll('.footer-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabs.querySelectorAll('.footer-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadFooterTab(btn.dataset.ftab);
+      });
+    });
+  }
+
   updateFooterVisibility();
   fitVisibleTerminals();
+  loadFooterTab('branches');
+}
 
-  try {
-    const session = sessions[focusedIndex];
-    if (!session?.cwd) return;
-    const data = await invoke('get_branch_graph', { cwd: session.cwd });
-    if (!data) {
-      graph.innerHTML = '<span class="branch-graph-empty">Not a git repository</span>';
-      return;
+async function loadFooterTab(tab) {
+  const content = document.getElementById('footer-tab-content');
+  if (!content) return;
+
+  const session = sessions[focusedIndex];
+  if (!session?.cwd) {
+    content.innerHTML = '<span class="branch-graph-empty">No active session</span>';
+    return;
+  }
+
+  if (tab === 'branches') {
+    content.innerHTML = '<span class="branch-graph-loading">Loading...</span>';
+    try {
+      const data = await invoke('get_branch_graph', { cwd: session.cwd });
+      if (!data) {
+        content.innerHTML = '<span class="branch-graph-empty">Not a git repository</span>';
+        return;
+      }
+      branchGraphCache = data;
+      renderBranchGraph(data, data.branches.find(b => b.is_current)?.name);
+    } catch {
+      content.innerHTML = '<span class="branch-graph-empty">Failed to load branch data</span>';
     }
-    branchGraphCache = data;
-    renderBranchGraph(data, data.branches.find(b => b.is_current)?.name);
-  } catch {
-    graph.innerHTML = '<span class="branch-graph-empty">Failed to load branch data</span>';
+  } else if (tab === 'stashes') {
+    content.innerHTML = '<span class="branch-graph-loading">Loading...</span>';
+    try {
+      const stashes = await invoke('git_stash_list', { cwd: session.cwd });
+      renderStashList(stashes, session.cwd);
+    } catch (err) {
+      content.innerHTML = `<span class="branch-graph-empty">Failed to load stashes: ${err}</span>`;
+    }
   }
 }
 
+function renderStashList(stashes, cwd) {
+  const content = document.getElementById('footer-tab-content');
+  if (!content) return;
+
+  const header = document.createElement('div');
+  header.className = 'stash-header';
+  header.innerHTML = `<button class="fv-action-btn" id="stash-create-btn">New Stash</button>`;
+
+  const list = document.createElement('div');
+  list.className = 'stash-list';
+
+  if (stashes.length === 0) {
+    list.innerHTML = '<span class="branch-graph-empty">No stashes</span>';
+  } else {
+    for (const s of stashes) {
+      const entry = document.createElement('div');
+      entry.className = 'stash-entry';
+      entry.innerHTML = `
+        <span class="stash-index">stash@{${s.index}}</span>
+        <span class="stash-message">${s.message}</span>
+        <span class="stash-date">${s.date}</span>
+        <div class="stash-actions">
+          <button class="fv-action-btn stash-apply" data-idx="${s.index}">Apply</button>
+          <button class="fv-action-btn stash-pop" data-idx="${s.index}">Pop</button>
+          <button class="fv-action-btn stash-drop" data-idx="${s.index}">Drop</button>
+        </div>
+      `;
+      list.appendChild(entry);
+    }
+  }
+
+  content.innerHTML = '';
+  content.appendChild(header);
+  content.appendChild(list);
+
+  // Create stash
+  content.querySelector('#stash-create-btn').onclick = async () => {
+    const msg = prompt('Stash message (optional):');
+    try {
+      await invoke('git_stash_push', { cwd, message: msg || undefined });
+      const updated = await invoke('git_stash_list', { cwd });
+      renderStashList(updated, cwd);
+    } catch (err) {
+      alert('Stash failed: ' + err);
+    }
+  };
+
+  // Apply/Pop/Drop handlers
+  content.querySelectorAll('.stash-apply').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await invoke('git_stash_pop', { cwd, index: parseInt(btn.dataset.idx) });
+        const updated = await invoke('git_stash_list', { cwd });
+        renderStashList(updated, cwd);
+      } catch (err) { alert('Apply failed: ' + err); }
+    };
+  });
+  content.querySelectorAll('.stash-pop').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await invoke('git_stash_pop', { cwd, index: parseInt(btn.dataset.idx) });
+        const updated = await invoke('git_stash_list', { cwd });
+        renderStashList(updated, cwd);
+      } catch (err) { alert('Pop failed: ' + err); }
+    };
+  });
+  content.querySelectorAll('.stash-drop').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`Drop stash@{${btn.dataset.idx}}? This cannot be undone.`)) return;
+      try {
+        await invoke('git_stash_drop', { cwd, index: parseInt(btn.dataset.idx) });
+        const updated = await invoke('git_stash_list', { cwd });
+        renderStashList(updated, cwd);
+      } catch (err) { alert('Drop failed: ' + err); }
+    };
+  });
+}
+
 function renderBranchGraph(data, selectedBranch) {
-  const graph = document.getElementById('footer-branch-graph');
+  const graph = document.getElementById('footer-tab-content') || document.getElementById('footer-branch-graph');
   graph.innerHTML = '';
 
   // Left: branch list
@@ -2068,6 +2281,9 @@ function setupShortcuts() {
     'prev-pane':      { key: '[',       meta: true,  shift: true  },
     'next-pane':      { key: ']',       meta: true,  shift: true  },
     'notifications':  { key: 'i',       meta: true,  shift: false },
+    'find':           { key: 'f',       meta: true,  shift: false },
+    'command-palette': { key: 'p',      meta: true,  shift: false },
+    'new-claude':     { key: 'n',       meta: true,  shift: true  },
     'nav-up':         { key: 'ArrowUp',    meta: true,  shift: false, alt: true },
     'nav-down':       { key: 'ArrowDown',  meta: true,  shift: false, alt: true },
     'nav-left':       { key: 'ArrowLeft',  meta: true,  shift: false, alt: true },
@@ -2090,6 +2306,9 @@ function setupShortcuts() {
     'prev-pane':      () => { if (isAnyPanelActive()) hidePanel(); focusNextVisible(focusedIndex, -1); return true; },
     'next-pane':      () => { if (isAnyPanelActive()) hidePanel(); focusNextVisible(focusedIndex, 1); return true; },
     'notifications':  () => { toggleNotificationPanel(); return true; },
+    'find':           () => { toggleSearchBar(focusedIndex); return true; },
+    'command-palette': () => { showCommandPalette(); return true; },
+    'new-claude':     () => { createClaudeSession(); return true; },
     'nav-up':         () => { navigateDirection('up'); return true; },
     'nav-down':       () => { navigateDirection('down'); return true; },
     'nav-left':       () => { navigateDirection('left'); return true; },
@@ -2172,7 +2391,8 @@ function renderNotificationPanel() {
     return;
   }
 
-  const items = notificationHistory.map((n, i) => {
+  const grouped = groupNotifications(notificationHistory);
+  const items = grouped.map((n, i) => {
     const time = new Date(n.timestamp);
     const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const statusClass = n.status.startsWith('OSC:') ? 'WaitingForInput' : n.status;
@@ -2186,10 +2406,12 @@ function renderNotificationPanel() {
     }[n.status] || n.status;
     const dotColorMap = { WaitingForInput: 'waiting', NeedsPermission: 'waiting', ClaudeNeedsInput: 'waiting', Exited: 'exited', Error: 'exited', ClaudeFinished: 'idle', CommandCompleted: 'idle' };
     const dotColor = dotColorMap[statusClass] || 'working';
+    const countBadge = n.count > 1 ? `<span class="notif-count-badge">&times;${n.count}</span>` : '';
     return `<div class="notif-item" data-index="${n.sessionIndex}">
       <span class="notif-dot" style="background:var(--status-${dotColor})"></span>
       <span class="notif-session">${n.sessionName}</span>
       <span class="notif-status">${statusLabel}</span>
+      ${countBadge}
       <span class="notif-time">${timeStr}</span>
     </div>`;
   }).join('');
@@ -4029,7 +4251,57 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupStatusListener();
   initFileViewer();
   loadSavedTheme();
-  initTrayIcon();
+  initDockIcon();
+
+  // Register core actions in command palette
+  initCommandPalette();
+  registerPaletteAction('new-terminal', 'New Terminal', 'Cmd+N', () => createSession());
+  registerPaletteAction('close-terminal', 'Close Terminal', 'Cmd+W', () => { if (sessions.length > 0) removeSession(focusedIndex); });
+  registerPaletteAction('settings', 'Open Settings', 'Cmd+,', () => togglePanel('settings'));
+  registerPaletteAction('sidebar-toggle', 'Toggle Sidebar', 'Cmd+B', () => document.getElementById('sidebar-toggle').click());
+  registerPaletteAction('file-viewer', 'Toggle File Browser', 'Cmd+Shift+E', () => toggleFileViewer(sessions[focusedIndex]?.cwd));
+  registerPaletteAction('maximize', 'Maximize Pane', 'Cmd+Shift+Enter', () => { if (sessions.length > 0) toggleMaximize(focusedIndex); });
+  registerPaletteAction('layout-mode', 'Toggle Layout Mode', 'Cmd+Shift+G', () => toggleLayoutMode());
+  registerPaletteAction('auto-tile', 'Auto-Tile Panes', 'Cmd+Shift+T', () => autoTile());
+  registerPaletteAction('notifications', 'Toggle Notifications', 'Cmd+I', () => toggleNotificationPanel());
+  registerPaletteAction('find', 'Find in Terminal', 'Cmd+F', () => toggleSearchBar(focusedIndex));
+  registerPaletteAction('new-claude', 'New Claude Session', 'Cmd+Shift+N', () => createClaudeSession());
+  registerPaletteAction('save-layout', 'Save Layout Snapshot', null, () => {
+    const name = prompt('Snapshot name:');
+    if (name) {
+      const state = { layoutMode, snapToGrid, gridSplitRatios, sessions: sessions.map(s => ({ name: s.name, cwd: s.cwd, minimized: s.minimized, freeformRect: s.freeformRect })), focused_index: focusedIndex };
+      saveSnapshot(name, state);
+    }
+  });
+  registerPaletteAction('prev-pane', 'Previous Pane', 'Cmd+Shift+[', () => focusNextVisible(focusedIndex, -1));
+  registerPaletteAction('next-pane', 'Next Pane', 'Cmd+Shift+]', () => focusNextVisible(focusedIndex, 1));
+
+  // Register session profiles in command palette
+  for (const p of getProfiles()) {
+    registerPaletteAction(`profile-${p.name}`, `Launch: ${p.name}`, null, () => {
+      window.dispatchEvent(new CustomEvent('launch-profile', { detail: p }));
+    });
+  }
+
+  // Handle profile launches
+  window.addEventListener('launch-profile', async (e) => {
+    const profile = e.detail;
+    await createSession(profile.cwd || undefined);
+    if (profile.startupCommand) {
+      const session = sessions[sessions.length - 1];
+      setTimeout(() => {
+        const data = Array.from(new TextEncoder().encode(profile.startupCommand + '\r'));
+        invoke('write_to_pty', { sessionId: session.id, data });
+      }, 300);
+    } else if (profile.autoStartClaude) {
+      const session = sessions[sessions.length - 1];
+      setTimeout(() => {
+        const data = Array.from(new TextEncoder().encode('claude\r'));
+        invoke('write_to_pty', { sessionId: session.id, data });
+      }, 300);
+    }
+  });
+
   setupFreeformDrag();
   setupFreeformResize();
   setupGridGutterDrag();
