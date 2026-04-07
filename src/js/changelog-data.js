@@ -3,6 +3,15 @@
 
 export const CHANGELOG_ENTRIES = [
   {
+    version: 'v0.4.42',
+    date: '2026-04-07',
+    body: `
+- **Rich changelog in Settings** — Release notes now render with full markdown support including tables, task lists, ordered lists, and images
+- **Mermaid diagram support** — Mermaid diagrams in markdown files and changelogs now render as interactive charts
+- **Shared markdown engine** — Consistent markdown rendering across the file viewer and changelog
+`
+  },
+  {
     version: 'v0.4.41',
     date: '2026-04-07',
     body: `
