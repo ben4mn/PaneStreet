@@ -4241,31 +4241,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Listen for OSC terminal notifications (OSC 9/99/777)
+  // Only add pane ring indicator — don't pollute notification history or desktop
   window.addEventListener('terminal-notification', (e) => {
-    const { sessionId, title, body } = e.detail;
+    const { sessionId } = e.detail;
     const session = sessions.find(s => s.id === sessionId);
     if (!session) return;
     const idx = sessions.indexOf(session);
 
-    // Add notification ring if not focused
     if (idx !== focusedIndex) {
       session.pane.classList.add('notify-ring');
       const card = document.querySelectorAll('.session-card')[idx];
       if (card) card.classList.add('notify-badge');
-    }
-
-    // Add to notification history
-    addNotification(session.name, `OSC: ${body}`, idx);
-
-    // Send desktop notification if window not focused
-    if (!windowFocused && localStorage.getItem('ps-notifications') !== 'false') {
-      invoke('plugin:notification|is_permission_granted').then(granted => {
-        if (granted) {
-          const options = { title: title || 'PaneStreet', body: `${session.name}: ${body}` };
-          if (localStorage.getItem('ps-notify-sound') !== 'false') options.sound = 'default';
-          invoke('plugin:notification|notify', { options });
-        }
-      }).catch(() => {});
     }
   });
 
