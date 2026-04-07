@@ -1,5 +1,7 @@
 const { invoke } = window.__TAURI__.core;
 import { getProfiles, saveProfile, deleteProfile } from './session-profiles.js';
+import { parseMarkdown, initMermaidBlocks } from './markdown.js';
+import { CHANGELOG_ENTRIES } from './changelog-data.js';
 
 let activePanel = null;
 let onHideCallback = null;
@@ -743,9 +745,7 @@ async function renderSettingsTab(tab) {
 
       <div class="settings-group" style="margin-top:12px">
         <div class="setting-section-title">What's New</div>
-        <div id="changelog-content" style="margin-top:8px">
-          <div class="setting-description" style="color:var(--text-muted)">Loading release notes...</div>
-        </div>
+        <div id="changelog-content" style="margin-top:8px"></div>
       </div>
 
       <div style="margin-top:12px">
@@ -753,46 +753,8 @@ async function renderSettingsTab(tab) {
       </div>
     `;
 
-    // Load changelog from GitHub releases
-    (async () => {
-      const el = container.querySelector('#changelog-content');
-      if (!el) return;
-      try {
-        const res = await fetch('https://api.github.com/repos/ben4mn/PaneStreet/releases?per_page=10');
-        if (!res.ok) throw new Error('fetch failed');
-        const releases = await res.json();
-        if (!releases.length) { el.innerHTML = '<div class="setting-description" style="color:var(--text-muted)">No releases found.</div>'; return; }
-        el.innerHTML = releases.map((r, i) => {
-          const date = new Date(r.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-          const body = r.body ? formatChangelogBody(r.body) : '<span style="color:var(--text-muted)">No notes.</span>';
-          const collapsed = i > 0;
-          return `
-            <div class="changelog-entry ${collapsed ? 'collapsed' : ''}">
-              <div class="changelog-header" style="cursor:pointer">
-                <span class="changelog-expand-icon">${collapsed ? '&#9654;' : '&#9660;'}</span>
-                <span class="changelog-version">${r.tag_name}</span>
-                <span class="changelog-date">${date}</span>
-              </div>
-              <div class="changelog-body" ${collapsed ? 'style="display:none"' : ''}>${body}</div>
-            </div>`;
-        }).join('');
-
-        // Expand/collapse click handlers
-        el.querySelectorAll('.changelog-header').forEach(header => {
-          header.addEventListener('click', () => {
-            const entry = header.closest('.changelog-entry');
-            const body = entry.querySelector('.changelog-body');
-            const icon = entry.querySelector('.changelog-expand-icon');
-            const isCollapsed = entry.classList.contains('collapsed');
-            entry.classList.toggle('collapsed');
-            body.style.display = isCollapsed ? '' : 'none';
-            icon.innerHTML = isCollapsed ? '&#9660;' : '&#9654;';
-          });
-        });
-      } catch {
-        el.innerHTML = '<div class="setting-description" style="color:var(--text-muted)">Could not load release notes.</div>';
-      }
-    })();
+    // Render changelog entries
+    renderChangelogEntries(container.querySelector('#changelog-content'));
 
     container.querySelector('#check-update-btn').addEventListener('click', async () => {
       const msgEl = container.querySelector('#update-status-msg');
@@ -920,22 +882,71 @@ async function renderSettingsTab(tab) {
 
 // --- Keyboard Shortcuts ---
 
-function formatChangelogBody(md) {
-  // Convert markdown bullet lists and bold to simple HTML, sanitize the rest
-  return md
-    .split('\n')
-    .filter(l => l.trim())
-    .map(l => {
-      const t = l.trim();
-      if (/^#{1,3}\s/.test(t)) return ''; // skip sub-headers (already have version as header)
-      if (/^[-*]\s/.test(t)) {
-        const text = t.slice(2).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        return `<div class="changelog-item">• ${text}</div>`;
+function renderChangelogEntries(el) {
+  if (!el) return;
+
+  // Render hardcoded entries
+  const hardcodedVersions = new Set(CHANGELOG_ENTRIES.map(e => e.version));
+
+  function renderEntries(entries) {
+    el.innerHTML = entries.map((entry, i) => {
+      const date = new Date(entry.date + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+      const body = parseMarkdown(entry.body);
+      const collapsed = i > 0;
+      return `
+        <div class="changelog-entry ${collapsed ? 'collapsed' : ''}">
+          <div class="changelog-header" style="cursor:pointer">
+            <span class="changelog-expand-icon">${collapsed ? '&#9654;' : '&#9660;'}</span>
+            <span class="changelog-version">${entry.version}</span>
+            <span class="changelog-date">${date}</span>
+          </div>
+          <div class="changelog-body fv-markdown-view" ${collapsed ? 'style="display:none"' : ''}>${body}</div>
+        </div>`;
+    }).join('');
+
+    // Init mermaid in all changelog bodies
+    el.querySelectorAll('.changelog-body').forEach(body => initMermaidBlocks(body));
+
+    // Expand/collapse click handlers
+    el.querySelectorAll('.changelog-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const entry = header.closest('.changelog-entry');
+        const body = entry.querySelector('.changelog-body');
+        const icon = entry.querySelector('.changelog-expand-icon');
+        const isCollapsed = entry.classList.contains('collapsed');
+        entry.classList.toggle('collapsed');
+        body.style.display = isCollapsed ? '' : 'none';
+        icon.innerHTML = isCollapsed ? '&#9660;' : '&#9654;';
+      });
+    });
+  }
+
+  // Start with hardcoded entries
+  const allEntries = [...CHANGELOG_ENTRIES];
+
+  // Fetch additional releases from GitHub API as fallback for versions not hardcoded
+  renderEntries(allEntries);
+
+  (async () => {
+    try {
+      const res = await fetch('https://api.github.com/repos/ben4mn/PaneStreet/releases?per_page=20');
+      if (!res.ok) return;
+      const releases = await res.json();
+      const apiEntries = releases
+        .filter(r => !hardcodedVersions.has(r.tag_name))
+        .map(r => ({
+          version: r.tag_name,
+          date: r.published_at ? r.published_at.split('T')[0] : '',
+          body: r.body || ''
+        }));
+      if (apiEntries.length > 0) {
+        const merged = [...CHANGELOG_ENTRIES, ...apiEntries].sort((a, b) => b.date.localeCompare(a.date));
+        renderEntries(merged);
       }
-      return `<div class="changelog-item" style="color:var(--text-muted)">${t}</div>`;
-    })
-    .filter(Boolean)
-    .join('');
+    } catch {
+      // API fallback failed silently — hardcoded entries are already shown
+    }
+  })();
 }
 
 const DEFAULT_SHORTCUTS = [

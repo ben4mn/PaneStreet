@@ -4016,6 +4016,62 @@ html, body {
   text-decoration: underline;
 }
 
+.fv-markdown-view table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: var(--font-size-xs);
+}
+
+.fv-markdown-view th {
+  background: var(--bg-pane);
+  color: var(--text-bright);
+  font-weight: 600;
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  text-align: left;
+}
+
+.fv-markdown-view td {
+  padding: 5px 10px;
+  border: 1px solid rgba(255,255,255,0.06);
+  color: var(--text-secondary);
+}
+
+.fv-markdown-view tr:nth-child(even) {
+  background: rgba(255,255,255,0.02);
+}
+
+.fv-markdown-view ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.fv-markdown-view img {
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  margin: 8px 0;
+}
+
+.fv-markdown-view .task-list-item {
+  list-style: none;
+  margin-left: -20px;
+}
+
+.fv-markdown-view .task-list-item input[type="checkbox"] {
+  margin-right: 6px;
+  accent-color: var(--accent);
+}
+
+.fv-markdown-view .mermaid {
+  background: var(--bg-pane);
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  margin: 8px 0;
+  text-align: center;
+  overflow-x: auto;
+}
+
 .fv-back-to-tree {
   background: none;
   border: none;
