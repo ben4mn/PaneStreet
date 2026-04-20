@@ -15,6 +15,7 @@ const closedSessionStack = []; // For Cmd+Z undo-close
 const MAX_CLOSED_SESSIONS = 10;
 let focusedIndex = 0;
 let maximizedIndex = null;
+let fullscreenAllMode = false;
 let contextMenu = null;
 let layoutMode = 'freeform'; // 'auto' | 'freeform'
 let snapToGrid = true;
@@ -467,6 +468,9 @@ function updateLayoutToggleUI() {
     snapBtn.style.display = layoutMode === 'freeform' ? '' : 'none';
     snapBtn.classList.toggle('active', snapToGrid);
   }
+
+  const focusBtn = toggle.querySelector('[data-mode="focus"]');
+  if (focusBtn) focusBtn.classList.toggle('active', fullscreenAllMode);
 }
 
 function autoTile() {
@@ -556,11 +560,20 @@ function createLayoutToggle() {
   tileBtn.title = 'Auto-tile all panes (\u2318\u21E7T)';
   tileBtn.addEventListener('click', () => autoTile());
 
+  const focusSvg = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><rect x="5" y="5" width="6" height="6" rx="1" fill="currentColor" opacity="0.3"/></svg>';
+  const focusBtn = document.createElement('button');
+  focusBtn.className = 'mode-btn';
+  focusBtn.dataset.mode = 'focus';
+  focusBtn.innerHTML = focusSvg + '<span class="mode-label">Focus</span>';
+  focusBtn.title = 'Focus mode \u2014 one pane at a time (\u2318\u21E7F)';
+  focusBtn.addEventListener('click', () => toggleFullscreenAll());
+
   container.appendChild(autoBtn);
   container.appendChild(freeBtn);
   container.appendChild(divider);
   container.appendChild(snapBtn);
   container.appendChild(tileBtn);
+  container.appendChild(focusBtn);
 
   // Set initial active state
   updateLayoutToggleUI();
@@ -1100,8 +1113,9 @@ async function createSession(restoreCwd, restoreScrollback) {
 
   rebuildSidebar();
 
-  // Exit maximize mode when adding a new session
-  maximizedIndex = null;
+  if (!fullscreenAllMode) {
+    maximizedIndex = null;
+  }
 
   updateGridLayout();
   updateFooterPills();
@@ -1313,8 +1327,9 @@ function restoreSession(index) {
   if (index < 0 || index >= sessions.length) return;
   sessions[index].minimized = false;
 
-  // Exit maximize mode when restoring
-  maximizedIndex = null;
+  if (!fullscreenAllMode) {
+    maximizedIndex = null;
+  }
 
   rebuildSidebar();
   updateGridLayout();
@@ -1328,6 +1343,7 @@ function toggleMaximize(index) {
 
   if (maximizedIndex === index) {
     maximizedIndex = null;
+    fullscreenAllMode = false;
   } else {
     sessions[index].minimized = false;
     maximizedIndex = index;
@@ -1348,11 +1364,27 @@ function toggleMaximize(index) {
   saveSessionState();
 }
 
+function toggleFullscreenAll() {
+  if (fullscreenAllMode) {
+    fullscreenAllMode = false;
+    maximizedIndex = null;
+  } else {
+    fullscreenAllMode = true;
+    maximizedIndex = focusedIndex;
+  }
+  updateGridLayout();
+  updateFooterPills();
+  updateLayoutToggleUI();
+  saveSessionState();
+}
+
 // --- Footer Pills ---
 
 function restoreAllSessions() {
   sessions.forEach(s => { s.minimized = false; });
-  maximizedIndex = null;
+  if (!fullscreenAllMode) {
+    maximizedIndex = null;
+  }
   rebuildSidebar();
   updateGridLayout();
   updateFooterPills();
@@ -2278,6 +2310,7 @@ function setupShortcuts() {
     'restore-all':    { key: 'm',       meta: true,  shift: true  },
     'layout-mode':    { key: 'g',       meta: true,  shift: true  },
     'auto-tile':      { key: 't',       meta: true,  shift: true  },
+    'focus-mode':     { key: 'f',       meta: true,  shift: true  },
     'prev-pane':      { key: '[',       meta: true,  shift: true  },
     'next-pane':      { key: ']',       meta: true,  shift: true  },
     'notifications':  { key: 'i',       meta: true,  shift: false },
@@ -2303,6 +2336,7 @@ function setupShortcuts() {
     'restore-all':    () => { restoreAllSessions(); return true; },
     'layout-mode':    () => { toggleLayoutMode(); return true; },
     'auto-tile':      () => { autoTile(); return true; },
+    'focus-mode':     () => { toggleFullscreenAll(); return true; },
     'prev-pane':      () => { if (isAnyPanelActive()) hidePanel(); focusNextVisible(focusedIndex, -1); return true; },
     'next-pane':      () => { if (isAnyPanelActive()) hidePanel(); focusNextVisible(focusedIndex, 1); return true; },
     'notifications':  () => { toggleNotificationPanel(); return true; },
@@ -4223,6 +4257,7 @@ function saveSessionState() {
     version: 3,
     layoutMode,
     snapToGrid,
+    fullscreenAllMode,
     gridSplitRatios,
     sessions: sessions.map(s => ({
       name: s.name,
@@ -4263,6 +4298,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   registerPaletteAction('maximize', 'Maximize Pane', 'Cmd+Shift+Enter', () => { if (sessions.length > 0) toggleMaximize(focusedIndex); });
   registerPaletteAction('layout-mode', 'Toggle Layout Mode', 'Cmd+Shift+G', () => toggleLayoutMode());
   registerPaletteAction('auto-tile', 'Auto-Tile Panes', 'Cmd+Shift+T', () => autoTile());
+  registerPaletteAction('focus-mode', 'Focus Mode (One Pane at a Time)', 'Cmd+Shift+F', () => toggleFullscreenAll());
   registerPaletteAction('notifications', 'Toggle Notifications', 'Cmd+I', () => toggleNotificationPanel());
   registerPaletteAction('find', 'Find in Terminal', 'Cmd+F', () => toggleSearchBar(focusedIndex));
   registerPaletteAction('new-claude', 'New Claude Session', 'Cmd+Shift+N', () => createClaudeSession());
@@ -4487,10 +4523,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Window drag via Tauri startDragging — skip interactive elements only
-  document.getElementById('toolbar').addEventListener('mousedown', (e) => {
+  const toolbar = document.getElementById('toolbar');
+  toolbar.addEventListener('mousedown', (e) => {
     if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select') || e.target.closest('a')) return;
     e.preventDefault();
     invoke('plugin:window|start_dragging');
+  });
+
+  toolbar.addEventListener('dblclick', async (e) => {
+    if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select') || e.target.closest('a')) return;
+    const isFs = await invoke('plugin:window|is_fullscreen');
+    await invoke('plugin:window|set_fullscreen', { value: !isFs });
   });
 
   // Close notification panel when file viewer opens
@@ -4541,6 +4584,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (data.version >= 2) {
           layoutMode = data.layoutMode || 'auto';
           snapToGrid = data.snapToGrid !== false;
+          fullscreenAllMode = data.fullscreenAllMode === true;
           if (data.gridSplitRatios) gridSplitRatios = data.gridSplitRatios;
         }
 
@@ -4559,6 +4603,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (saved.freeformRect) {
             sessions[idx].freeformRect = saved.freeformRect;
           }
+        }
+        if (fullscreenAllMode) {
+          const fi = (data.focused_index >= 0 && data.focused_index < sessions.length) ? data.focused_index : 0;
+          maximizedIndex = fi;
         }
         rebuildSidebar();
         updateGridLayout();

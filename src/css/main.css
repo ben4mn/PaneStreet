@@ -347,11 +347,21 @@ html, body {
 .session-card[data-status="Error"]           { border-left-color: var(--status-exited); }
 .session-card[data-status="ClaudeFinished"]  { border-left-color: var(--status-idle); }
 .session-card[data-status="Exited"]          { border-left-color: var(--status-exited); }
+.session-card[data-status="ClaudeNeedsInput"]{ border-left-color: var(--status-waiting); }
 
 .session-card.active {
-  background: var(--bg-card-active);
-  color: var(--accent-fg);
+  background: rgba(42, 109, 240, 0.15);
+  color: var(--text-bright);
 }
+
+.session-card.active[data-status="Working"]         { border-left-color: var(--status-working); }
+.session-card.active[data-status="Idle"]            { border-left-color: var(--status-idle); }
+.session-card.active[data-status="WaitingForInput"] { border-left-color: var(--status-waiting); }
+.session-card.active[data-status="NeedsPermission"] { border-left-color: var(--status-permission); }
+.session-card.active[data-status="ClaudeNeedsInput"]{ border-left-color: var(--status-waiting); }
+.session-card.active[data-status="Error"]           { border-left-color: var(--status-exited); }
+.session-card.active[data-status="ClaudeFinished"]  { border-left-color: var(--status-idle); }
+.session-card.active[data-status="Exited"]          { border-left-color: var(--status-exited); }
 
 .status-dot {
   width: 6px;
@@ -2562,8 +2572,14 @@ html, body {
 
 /* Session card minimized indicator */
 .session-card.minimized-card {
-  opacity: 0.5;
+  opacity: 0.7;
+  filter: grayscale(0.6) brightness(0.8);
   border-left-style: dashed;
+}
+
+.session-card.minimized-card:hover {
+  filter: grayscale(0.3) brightness(0.9);
+  opacity: 0.85;
 }
 
 .session-card.minimized-card::after {
@@ -3720,7 +3736,7 @@ html, body {
   top: var(--titlebar-height);
   right: 0;
   bottom: 0;
-  z-index: 20;
+  z-index: 950;
   box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
   transform: translateX(0);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -4362,7 +4378,7 @@ html, body {
   top: var(--titlebar-height);
   right: 0;
   bottom: 0;
-  z-index: 21;
+  z-index: 951;
   box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
   transform: translateX(0);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
