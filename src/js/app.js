@@ -6,6 +6,7 @@ import { showCommandPalette, hideCommandPalette, registerPaletteAction, initComm
 import { getProfiles } from './session-profiles.js';
 import { getSnapshots, saveSnapshot } from './layout-snapshots.js';
 import { groupNotifications } from './notification-utils.js';
+import { escapeHtml } from './markdown.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -1981,7 +1982,7 @@ async function loadFooterTab(tab) {
       const stashes = await invoke('git_stash_list', { cwd: session.cwd });
       renderStashList(stashes, session.cwd);
     } catch (err) {
-      content.innerHTML = `<span class="branch-graph-empty">Failed to load stashes: ${err}</span>`;
+      content.innerHTML = `<span class="branch-graph-empty">Failed to load stashes: ${escapeHtml(String(err))}</span>`;
     }
   }
 }
@@ -2190,11 +2191,7 @@ function formatRelativeTime(unixSec, nowSec) {
   return `${Math.floor(diff / 604800)}w`;
 }
 
-function escapeHtml(text) {
-  const el = document.createElement('span');
-  el.textContent = text;
-  return el.innerHTML;
-}
+// escapeHtml is now imported from ./markdown.js
 
 // --- Config Panel Buttons ---
 

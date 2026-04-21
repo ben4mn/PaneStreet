@@ -1,6 +1,7 @@
 // Shared markdown parser and utilities
 
 export function escapeHtml(text) {
+  if (text == null) return '';
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

@@ -100,6 +100,18 @@ describe('escapeHtml', () => {
     expect(escapeHtml('<script>"hello"</script>')).toBe('&lt;script&gt;&quot;hello&quot;&lt;/script&gt;');
     expect(escapeHtml('a & b')).toBe('a &amp; b');
   });
+
+  it('escapes angle brackets in error messages', () => {
+    expect(escapeHtml('Error: <img onerror=alert(1)>')).toContain('&lt;img');
+  });
+
+  it('returns empty string for null', () => {
+    expect(escapeHtml(null)).toBe('');
+  });
+
+  it('returns empty string for undefined', () => {
+    expect(escapeHtml(undefined)).toBe('');
+  });
 });
 
 describe('CHANGELOG_ENTRIES', () => {

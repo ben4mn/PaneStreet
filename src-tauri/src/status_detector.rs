@@ -1,12 +1,43 @@
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 const TRAILING_BUFFER_SIZE: usize = 1024;
-const IDLE_TIMEOUT: Duration = Duration::from_secs(8);
+const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 8;
+const MAX_IDLE_TIMEOUT_SECS: u64 = 120;
 const IDLE_CHECK_INTERVAL: Duration = Duration::from_millis(500);
+
+static IDLE_TIMEOUT_SECS: AtomicU64 = AtomicU64::new(DEFAULT_IDLE_TIMEOUT_SECS);
+
+pub fn get_idle_timeout_secs() -> u64 {
+    IDLE_TIMEOUT_SECS.load(Ordering::Relaxed)
+}
+
+pub fn set_idle_timeout_secs(secs: u64) -> u64 {
+    if secs == 0 {
+        return get_idle_timeout_secs();
+    }
+    let clamped = secs.min(MAX_IDLE_TIMEOUT_SECS);
+    IDLE_TIMEOUT_SECS.store(clamped, Ordering::Relaxed);
+    clamped
+}
+
+fn idle_timeout() -> Duration {
+    Duration::from_secs(IDLE_TIMEOUT_SECS.load(Ordering::Relaxed))
+}
+
+#[tauri::command]
+pub fn get_idle_timeout() -> u64 {
+    get_idle_timeout_secs()
+}
+
+#[tauri::command]
+pub fn set_idle_timeout(secs: u64) -> u64 {
+    set_idle_timeout_secs(secs)
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum SessionStatus {
@@ -178,9 +209,8 @@ fn strip_ansi(text: &str) -> String {
 fn analyze_buffer(buffer: &[u8]) -> SessionStatus {
     let raw = String::from_utf8_lossy(buffer);
     let text = strip_ansi(&raw);
-    // Look at the last ~400 chars for prompt detection (increased for Claude prompts)
-    let tail = if text.len() > 400 {
-        let mut start = text.len() - 400;
+    let tail = if text.len() > 800 {
+        let mut start = text.len() - 800;
         while start < text.len() && !text.is_char_boundary(start) {
             start += 1;
         }
@@ -189,16 +219,18 @@ fn analyze_buffer(buffer: &[u8]) -> SessionStatus {
         &text
     };
 
+    let tail_lower = tail.to_lowercase();
+
     // Claude Code specific: plan approval, input needed, attention needed
-    if tail.contains("Claude Code needs your approval")
-        || tail.contains("Claude Code needs your input")
-        || tail.contains("Claude Code needs your attention")
+    if tail_lower.contains("claude code needs your approval")
+        || tail_lower.contains("claude code needs your input")
+        || tail_lower.contains("claude code needs your attention")
     {
         return SessionStatus::ClaudeNeedsInput;
     }
 
     // Claude Code permission prompts (tool use approval)
-    if tail.contains("Claude needs your permission") {
+    if tail_lower.contains("claude needs your permission") {
         return SessionStatus::WaitingForInput;
     }
 
@@ -208,29 +240,30 @@ fn analyze_buffer(buffer: &[u8]) -> SessionStatus {
     }
 
     // Check for Claude Code permission prompts
-    if tail.contains("Allow") && (tail.contains("once") || tail.contains("always")) {
+    if tail_lower.contains("allow") && (tail_lower.contains("once") || tail_lower.contains("always")) {
         return SessionStatus::WaitingForInput;
     }
 
     // Check for permission/sudo
-    if tail.contains("Permission denied") || tail.contains("sudo:") {
+    if tail_lower.contains("permission denied") || tail_lower.contains("sudo:") {
         return SessionStatus::NeedsPermission;
     }
 
     // Check for Claude Code task completion
-    if tail.contains("Total cost:") || tail.contains("Total tokens:") {
+    if tail_lower.contains("total cost:") || tail_lower.contains("total tokens:") {
         return SessionStatus::ClaudeFinished;
     }
 
-    // Check for common error patterns (conservative to avoid false positives
-    // during normal compiler output, log lines, etc.)
-    if tail.contains("command not found")
-        || tail.contains("No such file or directory")
-        || tail.contains("panic:")
-        || tail.contains("Traceback (most recent call last)")
-        || tail.contains("SyntaxError:")
-        || tail.contains("TypeError:")
-        || tail.contains("ReferenceError:")
+    // Error patterns anchored to the last 3 lines only to avoid false positives
+    // from help text, test output, code comments, etc.
+    let recent = last_n_lines(tail, 3).to_lowercase();
+    if recent.contains("command not found")
+        || recent.contains("no such file or directory")
+        || recent.contains("panic:")
+        || recent.contains("traceback (most recent call last)")
+        || recent.contains("syntaxerror:")
+        || recent.contains("typeerror:")
+        || recent.contains("referenceerror:")
     {
         return SessionStatus::Error;
     }
@@ -252,6 +285,12 @@ pub fn emit_status(session_id: &str, status: &str, exit_code: Option<i32>) {
     }
 }
 
+fn last_n_lines(text: &str, n: usize) -> String {
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let start = if lines.len() > n { lines.len() - n } else { 0 };
+    lines[start..].join("\n")
+}
+
 fn idle_checker_loop(handle: AppHandle) {
     loop {
         std::thread::sleep(IDLE_CHECK_INTERVAL);
@@ -267,7 +306,7 @@ fn idle_checker_loop(handle: AppHandle) {
 
             for (id, state) in map.iter_mut() {
                 if state.current == SessionStatus::Working
-                    && now.duration_since(state.last_output_time) > IDLE_TIMEOUT
+                    && now.duration_since(state.last_output_time) > idle_timeout()
                 {
                     state.current = SessionStatus::Idle;
                     changes.push((id.clone(), SessionStatus::Idle));
@@ -288,5 +327,179 @@ fn idle_checker_loop(handle: AppHandle) {
                 },
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // B1: Case-insensitive pattern matching
+
+    #[test]
+    fn total_cost_lowercase() {
+        assert_eq!(analyze_buffer(b"output\ntotal cost: $0.50\n"), SessionStatus::ClaudeFinished);
+    }
+
+    #[test]
+    fn total_cost_titlecase() {
+        assert_eq!(analyze_buffer(b"some output\nTotal Cost: $1.23\n"), SessionStatus::ClaudeFinished);
+    }
+
+    #[test]
+    fn total_cost_uppercase() {
+        assert_eq!(analyze_buffer(b"some output\nTOTAL COST: $2.00\n"), SessionStatus::ClaudeFinished);
+    }
+
+    #[test]
+    fn total_tokens_case_insensitive() {
+        assert_eq!(analyze_buffer(b"Total Tokens: 1234\n"), SessionStatus::ClaudeFinished);
+    }
+
+    #[test]
+    fn claude_needs_input_mixed_case() {
+        assert_eq!(analyze_buffer(b"claude code needs your Input\n"), SessionStatus::ClaudeNeedsInput);
+    }
+
+    #[test]
+    fn claude_needs_approval_mixed_case() {
+        assert_eq!(analyze_buffer(b"Claude code needs your Approval\n"), SessionStatus::ClaudeNeedsInput);
+    }
+
+    #[test]
+    fn larger_tail_window_catches_distant_pattern() {
+        let mut buf = b"Total cost: $1.00\n".to_vec();
+        buf.extend_from_slice(&vec![b'x'; 600]);
+        assert_eq!(analyze_buffer(&buf), SessionStatus::ClaudeFinished);
+    }
+
+    #[test]
+    fn working_for_generic_output() {
+        assert_eq!(analyze_buffer(b"compiling main.rs...\n"), SessionStatus::Working);
+    }
+
+    #[test]
+    fn idle_for_empty_buffer() {
+        assert_eq!(analyze_buffer(b""), SessionStatus::Working);
+    }
+
+    // B2: Error detection anchored to last lines
+
+    #[test]
+    fn command_not_found_in_last_line_is_error() {
+        assert_eq!(analyze_buffer(b"$ foobar\nfoobar: command not found\n"), SessionStatus::Error);
+    }
+
+    #[test]
+    fn command_not_found_in_help_text_is_not_error() {
+        let buf = b"If you see 'command not found', install the tool first.\nMore help text here.\n$ ";
+        assert_eq!(analyze_buffer(buf), SessionStatus::Working);
+    }
+
+    #[test]
+    fn panic_in_code_comment_is_not_error() {
+        let buf = b"// if data is nil, panic: bad input\nfunc main() {\n    fmt.Println(\"ok\")\n}\n$ ";
+        assert_eq!(analyze_buffer(buf), SessionStatus::Working);
+    }
+
+    #[test]
+    fn typeerror_in_test_output_is_not_error() {
+        let buf = b"PASS tests/foo.test.js\n  check TypeError handling\n  2 tests passed\n$ ";
+        assert_eq!(analyze_buffer(buf), SessionStatus::Working);
+    }
+
+    #[test]
+    fn real_panic_at_end_is_error() {
+        let buf = b"thread 'main' panicked at 'index out of bounds'\npanic: runtime error\n";
+        assert_eq!(analyze_buffer(buf), SessionStatus::Error);
+    }
+
+    #[test]
+    fn real_traceback_at_end_is_error() {
+        let buf = b"Traceback (most recent call last)\n  File 'main.py', line 1\nNameError: x\n";
+        assert_eq!(analyze_buffer(buf), SessionStatus::Error);
+    }
+
+    #[test]
+    fn real_syntax_error_at_end_is_error() {
+        let buf = b"  File \"test.py\", line 3\n    print(\nSyntaxError: unexpected EOF\n";
+        assert_eq!(analyze_buffer(buf), SessionStatus::Error);
+    }
+
+    // B2: last_n_lines helper
+
+    #[test]
+    fn last_n_lines_returns_last_3() {
+        let text = "line1\nline2\nline3\nline4\nline5\n";
+        let result = last_n_lines(text, 3);
+        assert_eq!(result, "line3\nline4\nline5");
+    }
+
+    #[test]
+    fn last_n_lines_short_input() {
+        let text = "only\n";
+        let result = last_n_lines(text, 3);
+        assert_eq!(result, "only");
+    }
+
+    #[test]
+    fn last_n_lines_skips_empty_lines() {
+        let text = "line1\n\n\nline2\n\n";
+        let result = last_n_lines(text, 2);
+        assert_eq!(result, "line1\nline2");
+    }
+
+    // B1: ANSI stripping
+
+    #[test]
+    fn strip_ansi_removes_color_codes() {
+        let text = "\x1b[32mTotal cost:\x1b[0m $1.23";
+        assert_eq!(strip_ansi(text), "Total cost: $1.23");
+    }
+
+    #[test]
+    fn strip_ansi_preserves_plain_text() {
+        assert_eq!(strip_ansi("hello world"), "hello world");
+    }
+
+    // B3: Configurable idle timeout
+
+    #[test]
+    fn idle_timeout_defaults_to_8() {
+        IDLE_TIMEOUT_SECS.store(DEFAULT_IDLE_TIMEOUT_SECS, Ordering::Relaxed);
+        assert_eq!(get_idle_timeout_secs(), 8);
+    }
+
+    #[test]
+    fn set_idle_timeout_updates_value() {
+        IDLE_TIMEOUT_SECS.store(DEFAULT_IDLE_TIMEOUT_SECS, Ordering::Relaxed);
+        set_idle_timeout_secs(15);
+        assert_eq!(get_idle_timeout_secs(), 15);
+        IDLE_TIMEOUT_SECS.store(DEFAULT_IDLE_TIMEOUT_SECS, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn set_idle_timeout_rejects_zero() {
+        IDLE_TIMEOUT_SECS.store(DEFAULT_IDLE_TIMEOUT_SECS, Ordering::Relaxed);
+        let result = set_idle_timeout_secs(0);
+        assert_eq!(result, 8);
+        assert_eq!(get_idle_timeout_secs(), 8);
+    }
+
+    #[test]
+    fn set_idle_timeout_clamps_to_max() {
+        IDLE_TIMEOUT_SECS.store(DEFAULT_IDLE_TIMEOUT_SECS, Ordering::Relaxed);
+        let result = set_idle_timeout_secs(300);
+        assert_eq!(result, 120);
+        assert_eq!(get_idle_timeout_secs(), 120);
+        IDLE_TIMEOUT_SECS.store(DEFAULT_IDLE_TIMEOUT_SECS, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn idle_timeout_duration_reflects_atomic() {
+        IDLE_TIMEOUT_SECS.store(DEFAULT_IDLE_TIMEOUT_SECS, Ordering::Relaxed);
+        set_idle_timeout_secs(20);
+        assert_eq!(idle_timeout(), Duration::from_secs(20));
+        IDLE_TIMEOUT_SECS.store(DEFAULT_IDLE_TIMEOUT_SECS, Ordering::Relaxed);
     }
 }
