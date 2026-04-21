@@ -6,7 +6,7 @@ use tokio::net::UnixListener;
 
 use crate::pty_manager;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[allow(dead_code)]
 struct SocketCommand {
     cmd: String,
@@ -355,11 +355,8 @@ async fn handle_http_connection(mut stream: tokio::net::TcpStream, app: tauri::A
         .unwrap_or("");
 
     let response = match parse_hook_http_body(body) {
-        Ok(cmd) => {
-            let result = process_command(
-                &serde_json::to_string(&cmd).unwrap_or_default(),
-                &app,
-            );
+        Ok(_cmd) => {
+            let result = process_command(body, &app);
             let ok = result.ok;
             let json = serde_json::to_string(&result).unwrap_or_else(|_| {
                 r#"{"ok":false,"error":"serialize error"}"#.to_string()
