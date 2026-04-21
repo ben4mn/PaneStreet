@@ -61,6 +61,7 @@ pub fn spawn_pty(
     cmd.arg("-l"); // Login shell for proper env
     cmd.env("TERM", "xterm-256color");
     cmd.env("PANESTREET", "1");
+    cmd.env("PANESTREET_SESSION_ID", &session_id);
     cmd.env("CLAUDE_CODE_NO_FLICKER", "1");
 
     if let Some(dir) = cwd {

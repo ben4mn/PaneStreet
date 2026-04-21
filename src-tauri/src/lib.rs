@@ -17,6 +17,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             socket_server::start(app.handle().clone());
+            socket_server::start_http(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -58,6 +59,8 @@ pub fn run() {
             worktree_manager::git_stash_push,
             worktree_manager::git_stash_pop,
             worktree_manager::git_stash_drop,
+            status_detector::get_idle_timeout,
+            status_detector::set_idle_timeout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::Emitter;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 
 use crate::pty_manager;
@@ -263,5 +263,168 @@ fn process_command(input: &str, app: &tauri::AppHandle) -> SocketResponse {
             data: None,
             error: Some(format!("Unknown command: {}", cmd.cmd)),
         },
+    }
+}
+
+fn http_hook_port_path() -> PathBuf {
+    let dir = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join(".pane-street");
+    std::fs::create_dir_all(&dir).ok();
+    dir.join("http-hook-port")
+}
+
+pub fn parse_hook_http_body(body: &str) -> Result<SocketCommand, String> {
+    serde_json::from_str(body).map_err(|e| format!("Invalid JSON: {}", e))
+}
+
+pub fn build_hook_http_response(ok: bool, error: Option<&str>) -> String {
+    let status = if ok { "200 OK" } else { "400 Bad Request" };
+    let body = if ok {
+        r#"{"ok":true}"#.to_string()
+    } else {
+        format!(r#"{{"ok":false,"error":"{}"}}"#, error.unwrap_or("unknown"))
+    };
+    format!(
+        "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        status,
+        body.len(),
+        body
+    )
+}
+
+pub fn start_http(app_handle: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create tokio runtime for HTTP hook server");
+
+        rt.block_on(async move {
+            let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("[http_hook] Failed to bind: {}", e);
+                    return;
+                }
+            };
+
+            let port = match listener.local_addr() {
+                Ok(addr) => addr.port(),
+                Err(e) => {
+                    eprintln!("[http_hook] Failed to get local addr: {}", e);
+                    return;
+                }
+            };
+
+            let port_file = http_hook_port_path();
+            if let Err(e) = std::fs::write(&port_file, port.to_string()) {
+                eprintln!("[http_hook] Failed to write port file: {}", e);
+            }
+
+            loop {
+                match listener.accept().await {
+                    Ok((stream, _)) => {
+                        let app = app_handle.clone();
+                        tokio::spawn(async move {
+                            handle_http_connection(stream, app).await;
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("[http_hook] Accept error: {}", e);
+                    }
+                }
+            }
+        });
+    });
+}
+
+async fn handle_http_connection(mut stream: tokio::net::TcpStream, app: tauri::AppHandle) {
+    let mut buf = vec![0u8; 8192];
+    let n = match stream.read(&mut buf).await {
+        Ok(n) if n > 0 => n,
+        _ => return,
+    };
+
+    let request = String::from_utf8_lossy(&buf[..n]);
+
+    // Extract body: everything after the blank line
+    let body = request
+        .find("\r\n\r\n")
+        .map(|i| &request[i + 4..])
+        .unwrap_or("");
+
+    let response = match parse_hook_http_body(body) {
+        Ok(cmd) => {
+            let result = process_command(
+                &serde_json::to_string(&cmd).unwrap_or_default(),
+                &app,
+            );
+            let ok = result.ok;
+            let json = serde_json::to_string(&result).unwrap_or_else(|_| {
+                r#"{"ok":false,"error":"serialize error"}"#.to_string()
+            });
+            let status = if ok { "200 OK" } else { "400 Bad Request" };
+            format!(
+                "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                status,
+                json.len(),
+                json
+            )
+        }
+        Err(e) => build_hook_http_response(false, Some(&e)),
+    };
+
+    let _ = stream.write_all(response.as_bytes()).await;
+    let _ = stream.flush().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_valid_hook_body() {
+        let body = r#"{"cmd":"ping"}"#;
+        let result = parse_hook_http_body(body);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().cmd, "ping");
+    }
+
+    #[test]
+    fn parse_hook_body_with_fields() {
+        let body = r#"{"cmd":"hook-event","event":"Stop","session":"abc"}"#;
+        let result = parse_hook_http_body(body);
+        assert!(result.is_ok());
+        let cmd = result.unwrap();
+        assert_eq!(cmd.cmd, "hook-event");
+        assert_eq!(cmd.event, Some("Stop".to_string()));
+    }
+
+    #[test]
+    fn parse_invalid_hook_body() {
+        let result = parse_hook_http_body("not json at all");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid JSON"));
+    }
+
+    #[test]
+    fn build_ok_response_contains_200() {
+        let resp = build_hook_http_response(true, None);
+        assert!(resp.contains("200 OK"));
+        assert!(resp.contains(r#""ok":true"#));
+    }
+
+    #[test]
+    fn build_error_response_contains_400() {
+        let resp = build_hook_http_response(false, Some("bad input"));
+        assert!(resp.contains("400 Bad Request"));
+        assert!(resp.contains("bad input"));
+    }
+
+    #[test]
+    fn build_response_has_content_length() {
+        let resp = build_hook_http_response(true, None);
+        assert!(resp.contains("Content-Length:"));
     }
 }

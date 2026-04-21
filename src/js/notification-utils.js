@@ -8,7 +8,7 @@ export function groupNotifications(history) {
   const groups = [];
   for (const n of history) {
     const last = groups[groups.length - 1];
-    if (last && last.sessionIndex === n.sessionIndex && last.status === n.status) {
+    if (last && last.sessionId === n.sessionId && last.status === n.status) {
       last.count++;
       last.timestamps.push(n.timestamp);
     } else {
