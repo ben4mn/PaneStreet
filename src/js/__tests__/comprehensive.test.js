@@ -88,7 +88,7 @@ describe('layout snapshot edge cases', () => {
 describe('notification grouping edge cases', () => {
   it('handles very long sequences', () => {
     const history = Array.from({ length: 100 }, (_, i) => ({
-      sessionName: 'T1', status: 'ClaudeFinished', sessionIndex: 0, timestamp: i,
+      sessionName: 'T1', status: 'ClaudeFinished', sessionId: 'uuid-a', timestamp: i,
     }));
     const result = groupNotifications(history);
     expect(result).toHaveLength(1);
@@ -100,7 +100,7 @@ describe('notification grouping edge cases', () => {
     const history = Array.from({ length: 6 }, (_, i) => ({
       sessionName: i % 2 === 0 ? 'T1' : 'T2',
       status: 'ClaudeFinished',
-      sessionIndex: i % 2,
+      sessionId: i % 2 === 0 ? 'uuid-a' : 'uuid-b',
       timestamp: i,
     }));
     const result = groupNotifications(history);

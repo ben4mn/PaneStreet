@@ -7,6 +7,11 @@ import { getProfiles } from './session-profiles.js';
 import { getSnapshots, saveSnapshot } from './layout-snapshots.js';
 import { groupNotifications } from './notification-utils.js';
 import { escapeHtml } from './markdown.js';
+import { addNotification, removeNotificationsForSession, getNotifications, getUnreadCount, markAllRead, clearNotifications, shouldSendOSNotification, getOSNotificationMessage } from './notification-manager.js';
+import { STATUS_COLORS, computeStatusUpdate } from './status-utils.js';
+import { shouldShowSpeech } from './mascot-utils.js';
+import { findAutoMinimizeTarget, formatAutoMinimizeMessage } from './session-utils.js';
+import { correlateHookSession } from './hook-utils.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -1051,11 +1056,13 @@ async function createSession(restoreCwd, restoreScrollback) {
   const sessionName = `Terminal ${nextTerminalNumber()}`;
 
   // Cap at 6 visible — auto-minimize oldest visible if needed
-  const visibleCount = sessions.filter(s => !s.minimized).length;
-  if (visibleCount >= 6) {
-    const oldestVisible = sessions.findIndex(s => !s.minimized);
-    if (oldestVisible >= 0) {
-      sessions[oldestVisible].minimized = true;
+  const autoMinIdx = findAutoMinimizeTarget(sessions, 6);
+  if (autoMinIdx >= 0) {
+    const minSession = sessions[autoMinIdx];
+    minSession.minimized = true;
+    addNotificationAndRefresh(minSession.id, minSession.name, 'AutoMinimized');
+    if (robotEl && localStorage.getItem('ps-robot-enabled') !== 'false') {
+      showSpeech(formatAutoMinimizeMessage(minSession.name), 3000, true);
     }
   }
 
@@ -1169,6 +1176,9 @@ async function removeSession(index) {
     });
     if (closedSessionStack.length > MAX_CLOSED_SESSIONS) closedSessionStack.shift();
   } catch {}
+
+  // Clean up notifications for this session
+  removeNotificationsForSession(session.id);
 
   // Handle maximize state
   if (maximizedIndex === index) {
@@ -2381,21 +2391,10 @@ function setupShortcuts() {
   });
 }
 
-// --- Notification History ---
+// --- Notification History (backed by notification-manager.js) ---
 
-const notificationHistory = [];
-let unreadNotificationCount = 0;
-
-function addNotification(sessionName, status, sessionIndex) {
-  notificationHistory.unshift({
-    sessionName,
-    status,
-    sessionIndex,
-    timestamp: Date.now(),
-  });
-  // Cap at 100 entries
-  if (notificationHistory.length > 100) notificationHistory.length = 100;
-  unreadNotificationCount++;
+function addNotificationAndRefresh(sessionId, sessionName, status) {
+  addNotification(sessionId, sessionName, status);
   updateNotificationBadge();
   if (notifPanelVisible) renderNotificationPanel();
 }
@@ -2403,9 +2402,9 @@ function addNotification(sessionName, status, sessionIndex) {
 function updateNotificationBadge() {
   const badge = document.getElementById('notification-count-badge');
   if (!badge) return;
+  const unreadNotificationCount = getUnreadCount();
   if (unreadNotificationCount > 0) {
     badge.textContent = unreadNotificationCount > 99 ? '99+' : unreadNotificationCount;
-    badge.style.display = '';
   } else {
     badge.style.display = 'none';
   }
@@ -2417,12 +2416,13 @@ function renderNotificationPanel() {
   const content = document.getElementById('notif-content');
   if (!content) return;
 
-  if (notificationHistory.length === 0) {
+  const history = getNotifications();
+  if (history.length === 0) {
     content.innerHTML = '<p style="color:var(--text-muted);font-size:var(--font-size-sm);padding:4px;">No notifications yet. Alerts appear here when terminals need attention.</p>';
     return;
   }
 
-  const grouped = groupNotifications(notificationHistory);
+  const grouped = groupNotifications(history);
   const items = grouped.map((n, i) => {
     const time = new Date(n.timestamp);
     const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -2438,9 +2438,9 @@ function renderNotificationPanel() {
     const dotColorMap = { WaitingForInput: 'waiting', NeedsPermission: 'waiting', ClaudeNeedsInput: 'waiting', Exited: 'exited', Error: 'exited', ClaudeFinished: 'idle', CommandCompleted: 'idle' };
     const dotColor = dotColorMap[statusClass] || 'working';
     const countBadge = n.count > 1 ? `<span class="notif-count-badge">&times;${n.count}</span>` : '';
-    return `<div class="notif-item" data-index="${n.sessionIndex}">
+    return `<div class="notif-item" data-session-id="${n.sessionId}">
       <span class="notif-dot" style="background:var(--status-${dotColor})"></span>
-      <span class="notif-session">${n.sessionName}</span>
+      <span class="notif-session">${escapeHtml(n.sessionName)}</span>
       <span class="notif-status">${statusLabel}</span>
       ${countBadge}
       <span class="notif-time">${timeStr}</span>
@@ -2452,8 +2452,9 @@ function renderNotificationPanel() {
   // Click to jump to session
   content.querySelectorAll('.notif-item').forEach(item => {
     item.addEventListener('click', () => {
-      const idx = parseInt(item.dataset.index);
-      if (idx >= 0 && idx < sessions.length) {
+      const sid = item.dataset.sessionId;
+      const idx = sessions.findIndex(s => s.id === sid);
+      if (idx >= 0) {
         hideNotificationPanel();
         if (sessions[idx].minimized) restoreSession(idx);
         else setFocus(idx);
@@ -2470,7 +2471,7 @@ function showNotificationPanel() {
   panel.classList.remove('closing');
   notifPanelVisible = true;
   document.getElementById('notification-toggle-btn').classList.add('active');
-  unreadNotificationCount = 0;
+  markAllRead();
   updateNotificationBadge();
   renderNotificationPanel();
 }
@@ -2494,28 +2495,19 @@ function toggleNotificationPanel() {
   showNotificationPanel();
 }
 
-// --- Status Detection ---
-
-const STATUS_COLORS = {
-  Working: 'var(--status-working)',
-  Idle: 'var(--status-idle)',
-  WaitingForInput: 'var(--status-waiting)',
-  NeedsPermission: 'var(--status-permission)',
-  ClaudeNeedsInput: 'var(--status-waiting)',
-  Error: 'var(--status-exited)',
-  ClaudeFinished: 'var(--status-idle)',
-  Exited: 'var(--status-exited)',
-};
+// --- Status Detection (STATUS_COLORS imported from status-utils.js) ---
 
 async function maybeNotify(session, status) {
   const idx = sessions.indexOf(session);
   const isActiveTab = idx >= 0 && idx === focusedIndex;
 
-  // Mascot speech relay for in-app, different tab (Claude events only)
+  // Mascot speech relay for in-app, different tab
   if (windowFocused && !isActiveTab && localStorage.getItem('ps-robot-enabled') !== 'false') {
     const friendlyStatus = {
       ClaudeNeedsInput: 'needs your input',
       ClaudeFinished: 'Claude is done',
+      WaitingForInput: 'needs attention',
+      Error: 'hit an error',
     }[status];
     if (friendlyStatus) {
       showSpeech(`${session.name}: ${friendlyStatus}`, 4000, true);
@@ -2523,27 +2515,19 @@ async function maybeNotify(session, status) {
     }
   }
 
-  // Only send native push notifications for Claude-specific events
-  if (!['ClaudeNeedsInput', 'ClaudeFinished'].includes(status)) return;
-
-  // Skip if this is the active tab and window is focused
-  if (isActiveTab && windowFocused) return;
-
-  if (localStorage.getItem('ps-notifications') === 'false') return;
-
-  // Per-status opt-out toggles
-  const statusToggleMap = {
-    ClaudeNeedsInput: 'ps-notify-claude-input',
-    ClaudeFinished: 'ps-notify-claude-finished',
+  // Build settings object from localStorage for shouldSendOSNotification
+  const settings = {
+    notifications: localStorage.getItem('ps-notifications') || 'true',
+    'notify-waiting': localStorage.getItem('ps-notify-waiting') || 'true',
+    'notify-claude-input': localStorage.getItem('ps-notify-claude-input') || 'true',
+    'notify-claude-finished': localStorage.getItem('ps-notify-claude-finished') || 'true',
+    'notify-error': localStorage.getItem('ps-notify-error') || 'true',
+    'notify-exited': localStorage.getItem('ps-notify-exited') || 'true',
   };
-  const toggleKey = statusToggleMap[status];
-  if (toggleKey && localStorage.getItem(toggleKey) === 'false') return;
 
-  const messages = {
-    ClaudeNeedsInput: 'Claude needs your input',
-    ClaudeFinished: 'Claude finished working',
-  };
-  const msg = messages[status];
+  if (!shouldSendOSNotification(status, settings, isActiveTab, windowFocused)) return;
+
+  const msg = getOSNotificationMessage(status);
   if (!msg) return;
 
   try {
@@ -2553,12 +2537,9 @@ async function maybeNotify(session, status) {
       granted = result === 'granted';
     }
     if (granted) {
-      const options = { title: 'PaneStreet', body: `${session.name} ${msg}` };
+      const options = { title: 'PaneStreet', body: `${session.name}: ${msg}` };
       if (localStorage.getItem('ps-notify-sound') !== 'false') options.sound = 'default';
       await invoke('plugin:notification|notify', { options });
-      console.log('[notify] Sent native notification');
-    } else {
-      console.log('[notify] Permission not granted');
     }
   } catch (err) {
     console.warn('[notify] Failed:', err);
@@ -2574,27 +2555,27 @@ function setupStatusListener() {
     const previousStatus = session.status || 'Idle';
     session.status = status;
 
-    // Track command milestones (Idle→Working = command executed)
+    // Track command milestones (Idle->Working = command executed)
     if (previousStatus === 'Idle' && status === 'Working') {
       incrementCommandCount();
     }
-    const color = STATUS_COLORS[status] || 'var(--status-idle)';
+
+    const idx = sessions.indexOf(session);
+    const update = computeStatusUpdate(status, focusedIndex, idx);
 
     // Update pane header dot + border
-    session.statusDot.style.background = color;
+    session.statusDot.style.background = update.color;
     session.pane.dataset.status = status;
 
-    // Update sidebar card dot + border
+    // Update sidebar card dot + border (single DOM query)
     const cards = document.querySelectorAll('.session-card');
-    const idx = sessions.indexOf(session);
     if (cards[idx]) {
       const dot = cards[idx].querySelector('.status-dot');
-      if (dot) dot.style.background = color;
+      if (dot) dot.style.background = update.color;
       cards[idx].dataset.status = status;
     }
 
-    // Update mascot if this is the focused session
-    if (sessions.indexOf(session) === focusedIndex) {
+    if (update.shouldUpdateMascot) {
       updateMascot(status);
     }
 
@@ -2603,22 +2584,18 @@ function setupStatusListener() {
       session.terminal.applySettings(pendingTerminalSettings);
     }
 
-    // Visual ring on unfocused panes (all attention states — non-intrusive)
-    const needsAttention = ['WaitingForInput', 'NeedsPermission', 'ClaudeNeedsInput', 'Exited', 'Error', 'ClaudeFinished'].includes(status);
-    if (needsAttention && idx !== focusedIndex) {
+    // Visual ring on unfocused panes
+    if (update.needsAttentionRing) {
       session.pane.classList.add('notify-ring');
-      const card = document.querySelectorAll('.session-card')[idx];
-      if (card) card.classList.add('notify-badge');
-    } else if (!needsAttention) {
+      if (cards[idx]) cards[idx].classList.add('notify-badge');
+    } else if (!update.needsAttention) {
       session.pane.classList.remove('notify-ring');
-      const card = document.querySelectorAll('.session-card')[idx];
-      if (card) card.classList.remove('notify-badge');
+      if (cards[idx]) cards[idx].classList.remove('notify-badge');
     }
 
-    // Native push notifications + history: Claude events only
-    const isClaudeEvent = ['ClaudeNeedsInput', 'ClaudeFinished'].includes(status);
-    if (isClaudeEvent) {
-      addNotification(session.name, status, idx);
+    // Notifications for all attention states (not just Claude events)
+    if (update.needsAttention) {
+      addNotificationAndRefresh(session.id, session.name, status);
       maybeNotify(session, status);
     }
 
@@ -4043,11 +4020,9 @@ function triggerMascotBounce() {
 function showSpeech(text, duration = 3000, priority = false) {
   const el = document.getElementById('mascot-speech');
   if (!el) return;
-  // Never show speech when window is in the background
-  if (!windowFocused) return;
   const now = Date.now();
-  if (!priority && now - lastSpeechTime < getSpeechCooldown()) return;
-  if (!priority && !withinSpeechBudget()) return;
+  const onCooldown = now - lastSpeechTime < getSpeechCooldown();
+  if (!shouldShowSpeech({ windowFocused, priority, onCooldown, withinBudget: withinSpeechBudget() })) return;
   lastSpeechTime = now;
   speechTimestamps.push(now);
   el.textContent = text;
@@ -4491,9 +4466,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (localStorage.getItem('ps-notify-agent') === 'false') return;
     }
 
-    // Map to PaneStreet session index (single-session heuristic for now)
-    const sessionIndex = sessions.length === 1 ? 0 : -1;
-    addNotification(notifTitle, notifBody, sessionIndex);
+    // Correlate hook event to PaneStreet session
+    const sessionIndex = correlateHookSession(claudeSessionId, sessions);
+    const hookSession = sessionIndex >= 0 ? sessions[sessionIndex] : null;
+    const hookSessionId = hookSession?.id || 'hook';
+    const hookSessionName = hookSession?.name || 'Claude Code';
+    addNotificationAndRefresh(hookSessionId, hookSessionName, notifBody);
 
     if (windowFocused) {
       // App is open — mascot reacts subtly for important events only
@@ -4546,8 +4524,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     hideNotificationPanel();
   });
   document.getElementById('notif-clear-btn').addEventListener('click', () => {
-    notificationHistory.length = 0;
-    unreadNotificationCount = 0;
+    clearNotifications();
     updateNotificationBadge();
     renderNotificationPanel();
   });
