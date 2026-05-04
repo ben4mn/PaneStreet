@@ -443,6 +443,90 @@ fn notify_script_path() -> Option<PathBuf> {
     pane_street_hooks_dir().map(|d| d.join("notify.sh"))
 }
 
+pub fn build_notify_script(sock_path: &Path, log_path: &Path) -> String {
+    // Pass paths via environment variables so they cannot interact with Python's
+    // source-level quoting. The Python body reads them with os.environ.
+    format!(
+        r#"#!/bin/bash
+{marker}
+# Sends Claude Code hook events to PaneStreet via Unix socket.
+# Only fires for sessions running inside PaneStreet (PANESTREET=1 env var).
+# Usage: notify.sh <EventName>   (event name passed as $1 from hook config)
+[ -z "$PANESTREET" ] && cat > /dev/null && exit 0
+EVENT_NAME="${{1:-unknown}}"
+INPUT=$(cat)
+export PS_SOCK={sock_env}
+export PS_LOG={log_env}
+# Use python3 for robust JSON parsing (handles escaped quotes, newlines, unicode)
+python3 -c '
+import json, os, sys, socket, time
+event_name = sys.argv[2]
+sock_path = os.environ.get("PS_SOCK", "")
+log_path = os.environ.get("PS_LOG", "")
+def log_err(reason):
+    try:
+        if not log_path:
+            return
+        # Rotate if > 1 MB
+        try:
+            if os.path.getsize(log_path) > 1_048_576:
+                os.rename(log_path, log_path + ".1")
+        except OSError:
+            pass
+        ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+        with open(log_path, "a") as f:
+            f.write(ts + " event=" + str(event_name) + " " + str(reason) + "\n")
+    except Exception:
+        pass
+try:
+    d = json.loads(sys.argv[1])
+except Exception as e:
+    log_err("parse-error: " + str(e))
+    sys.exit(0)
+def g(k, maxlen=0):
+    v = str(d.get(k, ""))
+    return v[:maxlen] if maxlen else v
+payload = json.dumps({{
+    "cmd": "hook-event",
+    "event": event_name or g("hook_event_name") or "unknown",
+    "tool": g("tool_name"),
+    "message": g("message"),
+    "title": g("title"),
+    "ntype": g("notification_type"),
+    "last_msg": g("last_assistant_message", 200),
+    "session": g("session_id"),
+}})
+try:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(1)
+    s.connect(sock_path)
+    s.sendall((payload + "\n").encode())
+    s.close()
+except Exception as e:
+    log_err("socket-error: " + str(e))
+' "$INPUT" "$EVENT_NAME"
+"#,
+        marker = HOOK_MARKER,
+        sock_env = shell_quote(&sock_path.to_string_lossy()),
+        log_env = shell_quote(&log_path.to_string_lossy()),
+    )
+}
+
+fn shell_quote(s: &str) -> String {
+    // POSIX-safe: wrap in single quotes, escape internal single quotes as '\''
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for ch in s.chars() {
+        if ch == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
 fn ensure_notify_script() -> Result<String, String> {
     let dir = pane_street_hooks_dir().ok_or("Could not find home directory")?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create hooks dir: {}", e))?;
@@ -452,50 +536,12 @@ fn ensure_notify_script() -> Result<String, String> {
         .unwrap_or_else(|| PathBuf::from("/tmp"))
         .join(".pane-street")
         .join("panestreet.sock");
+    let log_path = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join(".pane-street")
+        .join("hooks.log");
 
-    let script = format!(
-        r#"#!/bin/bash
-{marker}
-# Sends Claude Code hook events to PaneStreet via Unix socket.
-# Only fires for sessions running inside PaneStreet (PANESTREET=1 env var).
-# Usage: notify.sh <EventName>   (event name passed as $1 from hook config)
-[ -z "$PANESTREET" ] && cat > /dev/null && exit 0
-EVENT_NAME="${{1:-unknown}}"
-INPUT=$(cat)
-# Use python3 for robust JSON parsing (handles escaped quotes, newlines, unicode)
-python3 -c "
-import json, sys, socket
-event_name = sys.argv[2]
-try:
-    d = json.loads(sys.argv[1])
-except Exception:
-    sys.exit(0)
-def g(k, maxlen=0):
-    v = str(d.get(k, ''))
-    return v[:maxlen] if maxlen else v
-payload = json.dumps({{
-    'cmd': 'hook-event',
-    'event': event_name or g('hook_event_name') or 'unknown',
-    'tool': g('tool_name'),
-    'message': g('message'),
-    'title': g('title'),
-    'ntype': g('notification_type'),
-    'last_msg': g('last_assistant_message', 200),
-    'session': g('session_id'),
-}})
-try:
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.settimeout(1)
-    s.connect('{sock}')
-    s.sendall((payload + '\\n').encode())
-    s.close()
-except Exception:
-    pass
-" "$INPUT" "$EVENT_NAME" 2>/dev/null || true
-"#,
-        marker = HOOK_MARKER,
-        sock = sock_path.display()
-    );
+    let script = build_notify_script(&sock_path, &log_path);
 
     std::fs::write(&script_path, &script)
         .map_err(|e| format!("Failed to write notify script: {}", e))?;
@@ -654,13 +700,56 @@ fn pane_street_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".pane-street"))
 }
 
+pub fn save_sessions_to(path: &Path, json: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, json).map_err(|e| format!("Failed to write sessions: {}", e))?;
+    std::fs::rename(&tmp, path)
+        .map_err(|e| format!("Failed to finalize sessions: {}", e))?;
+    // After a successful write, mirror the freshly-written good file to .bak so
+    // the next load_sessions_from can recover this version if the primary is later corrupted.
+    let bak = path.with_extension("json.bak");
+    let _ = std::fs::copy(path, &bak);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn save_sessions(json: String) -> Result<(), String> {
     let dir = pane_street_dir().ok_or("Could not find home directory")?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create directory: {}", e))?;
-    std::fs::write(dir.join("sessions.json"), &json)
-        .map_err(|e| format!("Failed to write sessions: {}", e))?;
-    Ok(())
+    save_sessions_to(&dir.join("sessions.json"), &json)
+}
+
+pub fn load_sessions_from(path: &Path) -> Result<Option<String>, String> {
+    let read_valid = |p: &Path| -> Option<String> {
+        let contents = std::fs::read_to_string(p).ok()?;
+        serde_json::from_str::<serde_json::Value>(&contents).ok()?;
+        Some(contents)
+    };
+
+    if let Some(good) = read_valid(path) {
+        return Ok(Some(good));
+    }
+
+    // Primary is missing or corrupt — try the backup
+    let bak = path.with_extension("json.bak");
+    if path.exists() {
+        // Move the bad primary aside so next save won't overwrite forensic evidence
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let corrupt_path = path.with_extension(format!("json.corrupt-{}", ts));
+        let _ = std::fs::rename(path, &corrupt_path);
+    }
+
+    if let Some(backup) = read_valid(&bak) {
+        return Ok(Some(backup));
+    }
+
+    Ok(None)
 }
 
 #[tauri::command]
@@ -668,11 +757,297 @@ pub fn load_sessions() -> Result<Option<String>, String> {
     let path = pane_street_dir()
         .ok_or("Could not find home directory")?
         .join("sessions.json");
-    if path.exists() {
-        std::fs::read_to_string(&path)
-            .map(Some)
-            .map_err(|e| format!("Failed to read sessions: {}", e))
-    } else {
-        Ok(None)
+    load_sessions_from(&path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+
+    fn extract_python_body(script: &str) -> String {
+        // The python3 body lives between python3 -c '...' single quotes.
+        let start = script.find("python3 -c '").expect("python3 -c block");
+        let after = &script[start + "python3 -c '".len()..];
+        // Find matching close quote at end (since we only embed shell-safe content inside)
+        let end = after.find("\n' \"$INPUT\"").expect("end of python body");
+        after[..end].to_string()
+    }
+
+    fn python_compiles(body: &str) -> bool {
+        // Write body to a temp file and ask python3 to syntax-check it via py_compile.
+        // This avoids a quoting hop that would mask real escape issues in `body`.
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("ps_hook_test_{}_{}.py", std::process::id(), n));
+        std::fs::write(&path, body).expect("write temp py");
+        let out = Command::new("python3")
+            .args(["-m", "py_compile"])
+            .arg(&path)
+            .output()
+            .expect("python3 available");
+        let _ = std::fs::remove_file(&path);
+        if !out.status.success() {
+            eprintln!(
+                "python stderr:\n{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+        out.status.success()
+    }
+
+    #[test]
+    fn notify_script_compiles_with_plain_path() {
+        let sock = PathBuf::from("/tmp/panestreet.sock");
+        let log = PathBuf::from("/tmp/hooks.log");
+        let script = build_notify_script(&sock, &log);
+        let body = extract_python_body(&script);
+        assert!(python_compiles(&body), "plain path python body failed to compile");
+    }
+
+    #[test]
+    fn notify_script_compiles_with_single_quote_in_path() {
+        let sock = PathBuf::from("/tmp/it's-me/panestreet.sock");
+        let log = PathBuf::from("/tmp/it's-me/hooks.log");
+        let script = build_notify_script(&sock, &log);
+        let body = extract_python_body(&script);
+        assert!(
+            python_compiles(&body),
+            "python body with single-quote in path failed to compile:\n{}",
+            body
+        );
+    }
+
+    #[test]
+    fn notify_script_compiles_with_backslash_in_path() {
+        let sock = PathBuf::from("/tmp/weird\\path/panestreet.sock");
+        let log = PathBuf::from("/tmp/weird\\path/hooks.log");
+        let script = build_notify_script(&sock, &log);
+        let body = extract_python_body(&script);
+        assert!(
+            python_compiles(&body),
+            "python body with backslash in path failed to compile:\n{}",
+            body
+        );
+    }
+
+    #[test]
+    fn shell_quote_wraps_plain_path() {
+        assert_eq!(shell_quote("/tmp/x.sock"), "'/tmp/x.sock'");
+    }
+
+    #[test]
+    fn shell_quote_escapes_single_quote() {
+        assert_eq!(shell_quote("it's"), r#"'it'\''s'"#);
+    }
+
+    #[test]
+    fn load_sessions_from_returns_primary_when_valid() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("ps_load_good_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sessions.json");
+        std::fs::write(&path, r#"{"version":3}"#).unwrap();
+
+        let result = load_sessions_from(&path).unwrap();
+        assert_eq!(result.as_deref(), Some(r#"{"version":3}"#));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_sessions_from_falls_back_to_backup_when_corrupt() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("ps_load_corrupt_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sessions.json");
+        let bak = dir.join("sessions.json.bak");
+        std::fs::write(&path, "this is not json {{").unwrap();
+        std::fs::write(&bak, r#"{"version":3,"recovered":true}"#).unwrap();
+
+        let result = load_sessions_from(&path).unwrap();
+        assert_eq!(
+            result.as_deref(),
+            Some(r#"{"version":3,"recovered":true}"#),
+            "expected backup contents when primary is corrupt"
+        );
+
+        // Bad file should be moved aside so next save does not overwrite evidence
+        assert!(!path.exists(), "corrupt primary should have been moved aside");
+        let moved: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().starts_with("sessions.json.corrupt-"))
+            .collect();
+        assert_eq!(moved.len(), 1, "expected exactly one .corrupt-<ts> artifact");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_sessions_from_returns_none_when_nothing_exists() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("ps_load_empty_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sessions.json");
+
+        let result = load_sessions_from(&path).unwrap();
+        assert!(result.is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_then_load_round_trips_via_backup_on_corruption() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("ps_load_rt_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sessions.json");
+
+        // First save: creates primary, no .bak yet
+        save_sessions_to(&path, r#"{"version":3,"first":true}"#).unwrap();
+        // Second save: should move first version to .bak before writing
+        save_sessions_to(&path, r#"{"version":3,"second":true}"#).unwrap();
+        // Corrupt the primary
+        std::fs::write(&path, "garbage").unwrap();
+
+        let loaded = load_sessions_from(&path).unwrap().unwrap();
+        // We should recover the "second" save (the most recent good one)
+        assert!(loaded.contains("second"), "expected second save recovered from .bak, got {}", loaded);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cargo_toml_declares_window_state_plugin() {
+        // CARGO_MANIFEST_DIR points at src-tauri/ when running cargo test.
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let contents = std::fs::read_to_string(&manifest).expect("read Cargo.toml");
+        assert!(
+            contents.contains("tauri-plugin-window-state"),
+            "Cargo.toml must declare tauri-plugin-window-state; found:\n{}",
+            contents
+        );
+    }
+
+    #[test]
+    fn lib_rs_registers_window_state_plugin() {
+        let lib = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+        let contents = std::fs::read_to_string(&lib).expect("read lib.rs");
+        assert!(
+            contents.contains("tauri_plugin_window_state::Builder"),
+            "lib.rs must register tauri_plugin_window_state; got:\n{}",
+            contents
+        );
+    }
+
+    #[test]
+    fn save_sessions_is_atomic_under_concurrency() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("ps_atomic_save_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sessions.json");
+
+        // Writer: alternates between two valid JSON payloads quickly
+        let path_w = path.clone();
+        let writer = std::thread::spawn(move || {
+            let payloads = [
+                r#"{"version":3,"sessions":[{"name":"a"}]}"#,
+                r#"{"version":3,"sessions":[{"name":"b"},{"name":"c"}]}"#,
+            ];
+            for i in 0..300 {
+                save_sessions_to(&path_w, payloads[i % 2]).unwrap();
+            }
+        });
+
+        // Reader: every read must parse as JSON (never empty, never truncated)
+        let path_r = path.clone();
+        let reader = std::thread::spawn(move || {
+            for _ in 0..800 {
+                if let Ok(s) = std::fs::read_to_string(&path_r) {
+                    assert!(!s.is_empty(), "sessions.json must never be empty when present");
+                    serde_json::from_str::<serde_json::Value>(&s)
+                        .expect("sessions.json must always be valid JSON under concurrency");
+                }
+            }
+        });
+
+        writer.join().unwrap();
+        reader.join().unwrap();
+
+        let tmp = dir.join("sessions.json.tmp");
+        assert!(!tmp.exists(), "tmp artifact should not linger after writes");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hook_script_logs_socket_error_when_sock_missing() {
+        // Arrange: a scratch dir with a bogus sock path and empty log file
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let tmp = std::env::temp_dir().join(format!("ps_hook_e2e_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let sock = tmp.join("nonexistent.sock");
+        let log = tmp.join("hooks.log");
+        let script_path = tmp.join("notify.sh");
+        let script = build_notify_script(&sock, &log);
+        std::fs::write(&script_path, &script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        // Act: run the script with PANESTREET=1 and a valid JSON payload
+        let status = Command::new("bash")
+            .arg(&script_path)
+            .arg("Notification")
+            .env("PANESTREET", "1")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                child
+                    .stdin
+                    .as_mut()
+                    .unwrap()
+                    .write_all(br#"{"hook_event_name":"Notification","title":"t","message":"m"}"#)
+                    .unwrap();
+                child.wait()
+            })
+            .expect("run notify.sh");
+
+        // Assert: script exited cleanly AND log captured the socket error
+        assert!(status.success(), "notify script should exit 0 even on error");
+        let log_contents = std::fs::read_to_string(&log).unwrap_or_default();
+        assert!(
+            log_contents.contains("socket-error"),
+            "expected 'socket-error' in log, got: {:?}",
+            log_contents
+        );
+        assert!(
+            log_contents.contains("event=Notification"),
+            "expected event name in log, got: {:?}",
+            log_contents
+        );
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

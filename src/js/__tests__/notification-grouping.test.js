@@ -1,7 +1,7 @@
 // Tests for notification grouping logic
 
 // The groupNotifications function will be extracted to a shared module
-import { groupNotifications } from '../notification-utils.js';
+import { groupNotifications, sendDesktopNotification } from '../notification-utils.js';
 
 describe('groupNotifications', () => {
   it('returns empty array for empty input', () => {
@@ -55,5 +55,48 @@ describe('groupNotifications', () => {
     expect(result[0].count).toBe(2);
     expect(result[1].count).toBe(1);
     expect(result[2].count).toBe(2);
+  });
+});
+
+describe('sendDesktopNotification', () => {
+  it('calls invoke when permission is granted', async () => {
+    const invoke = vi.fn((cmd) => {
+      if (cmd === 'plugin:notification|is_permission_granted') return Promise.resolve(true);
+      if (cmd === 'plugin:notification|notify') return Promise.resolve();
+      return Promise.resolve();
+    });
+    await sendDesktopNotification(invoke, { title: 'T', body: 'B' });
+    expect(invoke).toHaveBeenCalledWith('plugin:notification|is_permission_granted');
+    expect(invoke).toHaveBeenCalledWith('plugin:notification|notify', { options: { title: 'T', body: 'B' } });
+  });
+
+  it('skips notify when permission is not granted', async () => {
+    const invoke = vi.fn((cmd) => {
+      if (cmd === 'plugin:notification|is_permission_granted') return Promise.resolve(false);
+      return Promise.resolve();
+    });
+    await sendDesktopNotification(invoke, { title: 'T', body: 'B' });
+    const notifyCalls = invoke.mock.calls.filter(c => c[0] === 'plugin:notification|notify');
+    expect(notifyCalls).toHaveLength(0);
+  });
+
+  it('routes permission-check rejection through onError', async () => {
+    const err = new Error('perm-check-failed');
+    const invoke = vi.fn(() => Promise.reject(err));
+    const onError = vi.fn();
+    await sendDesktopNotification(invoke, { title: 'T', body: 'B' }, onError);
+    expect(onError).toHaveBeenCalledWith(err);
+  });
+
+  it('routes notify rejection through onError', async () => {
+    const err = new Error('notify-failed');
+    const invoke = vi.fn((cmd) => {
+      if (cmd === 'plugin:notification|is_permission_granted') return Promise.resolve(true);
+      if (cmd === 'plugin:notification|notify') return Promise.reject(err);
+      return Promise.resolve();
+    });
+    const onError = vi.fn();
+    await sendDesktopNotification(invoke, { title: 'T', body: 'B' }, onError);
+    expect(onError).toHaveBeenCalledWith(err);
   });
 });

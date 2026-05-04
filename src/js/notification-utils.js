@@ -17,3 +17,23 @@ export function groupNotifications(history) {
   }
   return groups;
 }
+
+export async function sendDesktopNotification(invoke, options, onError) {
+  const report = (err) => {
+    if (typeof onError === 'function') onError(err);
+    else console.error('[PaneStreet] notification failed:', err);
+  };
+  let granted;
+  try {
+    granted = await invoke('plugin:notification|is_permission_granted');
+  } catch (err) {
+    report(err);
+    return;
+  }
+  if (!granted) return;
+  try {
+    await invoke('plugin:notification|notify', { options });
+  } catch (err) {
+    report(err);
+  }
+}

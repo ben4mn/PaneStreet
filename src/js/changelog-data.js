@@ -3,6 +3,21 @@
 
 export const CHANGELOG_ENTRIES = [
   {
+    version: 'v0.4.45',
+    date: '2026-05-04',
+    body: `
+- **Mascot easter eggs back in business** — Reset any stuck mascot preferences with the new "Reset Easter Eggs (Mascot)" command in the palette (Cmd+K). Sweeping, dancing, and other idle animations will run again.
+- **More reliable session restore** — Sessions now save atomically to disk with a \`.bak\` fallback, so a crash or power loss won't leave you with an empty workspace. Corrupt files are preserved as \`sessions.json.corrupt-<timestamp>\` for forensics rather than silently discarded.
+- **Session restore remembers more** — Sidebar collapsed state and width, footer height, active panels, and per-pane font size are now saved and restored. Default scrollback capture bumped from 500 to 2000 lines (configurable via \`ps-scrollback-lines\` in localStorage).
+- **Window position persists** — PaneStreet now remembers your window's size and position between launches via \`tauri-plugin-window-state\`.
+- **Debounced save + flush on quit** — Session state writes are now debounced (300ms) during interactive work, and flushed synchronously when you close the app.
+- **Hook reliability fixes** — Claude Code hook notifications now survive unusual home-directory paths (single quotes, backslashes) that previously broke the Python bridge silently. Errors are logged to \`~/.pane-street/hooks.log\` with 1 MB rotation instead of being swallowed.
+- **Multi-instance protection** — PaneStreet now refuses to start if another instance is already running on the same socket, rather than silently stealing its hooks.
+- **Cleaner status detection** — Fixed a bug where help text mentioning "command not found" in quotes would incorrectly flag a pane as errored.
+- **Frontend notification errors surfaced** — Desktop notification failures now log to the console instead of being silently dropped.
+`
+  },
+  {
     version: 'v0.4.42',
     date: '2026-04-07',
     body: `

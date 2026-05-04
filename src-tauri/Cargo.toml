@@ -1,6 +1,6 @@
 [package]
 name = "pane-street"
-version = "0.4.44"
+version = "0.4.45"
 edition = "2021"
 
 [lib]
@@ -30,6 +30,7 @@ base64 = "0.22"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage", "NSRunningApplication"] }
 objc2-foundation = { version = "0.3", features = ["NSData"] }
+tauri-plugin-window-state = "2.4.1"
 
 [profile.release]
 strip = true

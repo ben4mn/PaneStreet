@@ -9,16 +9,24 @@ mod worktree_manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    use tauri::{Emitter, Manager};
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             socket_server::start(app.handle().clone());
             socket_server::start_http(app.handle().clone());
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // Give the frontend a chance to flush pending session state
+                let _ = window.app_handle().emit("before-quit", ());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             pty_manager::spawn_pty,

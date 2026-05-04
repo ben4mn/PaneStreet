@@ -1,6 +1,7 @@
 // Tests for command-palette.js — fuzzy search, action registry
 
 import { fuzzyMatch, registerPaletteAction, getPaletteActions, resetPalette } from '../command-palette.js';
+import { registerMascotActions } from '../mascot-utils.js';
 
 describe('fuzzyMatch', () => {
   it('matches exact substring', () => {
@@ -65,5 +66,27 @@ describe('palette action registry', () => {
     registerPaletteAction('test', 'Test', null, fn);
     getPaletteActions()[0].action();
     expect(fn).toHaveBeenCalled();
+  });
+});
+
+describe('registerMascotActions', () => {
+  beforeEach(() => resetPalette());
+
+  it('registers the reset-easter-eggs action', () => {
+    registerMascotActions({ registerPaletteAction, onReset: () => {} });
+    const ids = getPaletteActions().map(a => a.id);
+    expect(ids).toContain('reset-easter-eggs');
+  });
+
+  it('reset action clears localStorage and calls onReset', () => {
+    localStorage.setItem('ps-robot-enabled', 'false');
+    localStorage.setItem('ps-robot-standstill', 'true');
+    const onReset = vi.fn();
+    registerMascotActions({ registerPaletteAction, onReset });
+    const reset = getPaletteActions().find(a => a.id === 'reset-easter-eggs');
+    reset.action();
+    expect(localStorage.getItem('ps-robot-enabled')).toBeNull();
+    expect(localStorage.getItem('ps-robot-standstill')).toBeNull();
+    expect(onReset).toHaveBeenCalledTimes(1);
   });
 });

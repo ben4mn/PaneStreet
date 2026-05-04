@@ -5,12 +5,12 @@ import { initDockIcon } from './dock-icon.js';
 import { showCommandPalette, hideCommandPalette, registerPaletteAction, initCommandPalette } from './command-palette.js';
 import { getProfiles } from './session-profiles.js';
 import { getSnapshots, saveSnapshot } from './layout-snapshots.js';
-import { groupNotifications } from './notification-utils.js';
+import { groupNotifications, sendDesktopNotification } from './notification-utils.js';
 import { escapeHtml } from './markdown.js';
 import { addNotification, removeNotificationsForSession, getNotifications, getUnreadCount, markAllRead, clearNotifications, shouldSendOSNotification, getOSNotificationMessage } from './notification-manager.js';
 import { STATUS_COLORS, computeStatusUpdate } from './status-utils.js';
-import { shouldShowSpeech } from './mascot-utils.js';
-import { findAutoMinimizeTarget, formatAutoMinimizeMessage } from './session-utils.js';
+import { shouldShowSpeech, resetMascotPreferences, getMascotDiagnostics, claimMascotInit, registerMascotActions } from './mascot-utils.js';
+import { findAutoMinimizeTarget, formatAutoMinimizeMessage, createDebouncedSaver, buildSessionStatePayload, migrateSessionState, resolveScrollbackLines } from './session-utils.js';
 import { correlateHookSession } from './hook-utils.js';
 
 const { invoke } = window.__TAURI__.core;
@@ -3015,6 +3015,9 @@ function robotInit() {
     return;
   }
 
+  if (!claimMascotInit(robotEl)) return;
+  console.info('[mascot]', getMascotDiagnostics());
+
   // Start at a random spot — disable transition so it doesn't slide from default position
   if (robotLocation === 'footer') {
     robotEl.style.transition = 'none';
@@ -4224,9 +4227,29 @@ function setupResize(handleId, panel, side) {
   });
 }
 
-function saveSessionState() {
-  const data = {
-    version: 3,
+function getScrollbackLines() {
+  return resolveScrollbackLines(localStorage.getItem('ps-scrollback-lines'));
+}
+
+function collectUiSnapshot() {
+  const sidebar = document.getElementById('sidebar');
+  const footer = document.getElementById('footer');
+  const activePanels = [];
+  ['settings', 'notifications', 'git', 'file-viewer'].forEach(id => {
+    const el = document.getElementById(`${id}-panel`);
+    if (el && el.classList.contains('open')) activePanels.push(id);
+  });
+  return {
+    sidebarCollapsed: sidebar?.classList.contains('collapsed') || false,
+    sidebarWidth: sidebar ? sidebar.offsetWidth : null,
+    footerHeight: footer ? footer.offsetHeight : null,
+    activePanels,
+  };
+}
+
+function buildSessionState() {
+  const scrollbackLines = getScrollbackLines();
+  return buildSessionStatePayload({
     layoutMode,
     snapToGrid,
     fullscreenAllMode,
@@ -4236,13 +4259,27 @@ function saveSessionState() {
       cwd: s.cwd,
       minimized: s.minimized,
       freeformRect: s.freeformRect,
-      scrollback: s.terminal.getScrollback(500), // Save last 500 lines
+      scrollback: s.terminal.getScrollback(scrollbackLines),
+      fontSize: s.terminal.getFontSize ? s.terminal.getFontSize() : undefined,
     })),
-    focused_index: focusedIndex,
-  };
+    focusedIndex,
+    ui: collectUiSnapshot(),
+  });
+}
+
+const sessionSaver = createDebouncedSaver(() => {
+  const data = buildSessionState();
   invoke('save_sessions', { json: JSON.stringify(data) }).catch(err => {
     console.warn('Failed to save session state:', err);
   });
+}, 300);
+
+function saveSessionState() {
+  sessionSaver.schedule();
+}
+
+function flushSessionState() {
+  sessionSaver.flush();
 }
 
 // --- Init ---
@@ -4283,6 +4320,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   registerPaletteAction('prev-pane', 'Previous Pane', 'Cmd+Shift+[', () => focusNextVisible(focusedIndex, -1));
   registerPaletteAction('next-pane', 'Next Pane', 'Cmd+Shift+]', () => focusNextVisible(focusedIndex, 1));
+  registerMascotActions({
+    registerPaletteAction,
+    onReset: () => {
+      const overlay = document.getElementById('robot-overlay');
+      overlay?.classList.remove('hidden');
+      if (robotEl) delete robotEl.__psMascotInitialized;
+      robotInit();
+    },
+  });
 
   // Register session profiles in command palette
   for (const p of getProfiles()) {
@@ -4387,13 +4433,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     addNotification(title || 'External', body || '', -1);
     // Also send desktop notification
     if (!windowFocused && localStorage.getItem('ps-notifications') !== 'false') {
-      invoke('plugin:notification|is_permission_granted').then(granted => {
-        if (granted) {
-          const options = { title: title || 'PaneStreet', body: body || '' };
-          if (localStorage.getItem('ps-notify-sound') !== 'false') options.sound = 'default';
-          invoke('plugin:notification|notify', { options });
-        }
-      }).catch(() => {});
+      const options = { title: title || 'PaneStreet', body: body || '' };
+      if (localStorage.getItem('ps-notify-sound') !== 'false') options.sound = 'default';
+      sendDesktopNotification(invoke, options, (err) => {
+        console.error('[PaneStreet] socket notification failed:', err);
+      });
     }
   });
 
@@ -4481,13 +4525,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       // App is backgrounded — send desktop notification
       if (localStorage.getItem('ps-notifications') !== 'false') {
-        invoke('plugin:notification|is_permission_granted').then(granted => {
-          if (granted) {
-            const options = { title: notifTitle, body: notifBody };
-            if (localStorage.getItem('ps-notify-sound') !== 'false') options.sound = 'default';
-            invoke('plugin:notification|notify', { options });
-          }
-        }).catch(() => {});
+        const options = { title: notifTitle, body: notifBody };
+        if (localStorage.getItem('ps-notify-sound') !== 'false') options.sound = 'default';
+        sendDesktopNotification(invoke, options, (err) => {
+          console.error('[PaneStreet] Claude hook notification failed:', err);
+        });
       }
     }
   });
@@ -4496,6 +4538,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   listen('socket-parse-error', (event) => {
     console.warn('[PaneStreet] Socket parse error:', event.payload.error, event.payload.input);
   });
+
+  // Flush any pending debounced session-state save when the user closes the window.
+  listen('before-quit', () => {
+    flushSessionState();
+  });
+  // Best-effort synchronous flush via pagehide, in case the Tauri event races the close.
+  window.addEventListener('pagehide', () => flushSessionState());
 
   // Window drag via Tauri startDragging — skip interactive elements only
   const toolbar = document.getElementById('toolbar');
@@ -4552,15 +4601,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     const json = await invoke('load_sessions');
     if (json) {
-      const data = JSON.parse(json);
-      if ((data.version === 1 || data.version === 2 || data.version === 3) && data.sessions?.length > 0) {
-        // Restore layout mode from v2+ data
-        if (data.version >= 2) {
-          layoutMode = data.layoutMode || 'auto';
-          snapToGrid = data.snapToGrid !== false;
-          fullscreenAllMode = data.fullscreenAllMode === true;
-          if (data.gridSplitRatios) gridSplitRatios = data.gridSplitRatios;
-        }
+      const raw = JSON.parse(json);
+      const data = migrateSessionState(raw);
+      if (data && data.sessions?.length > 0) {
+        layoutMode = data.layoutMode || 'auto';
+        snapToGrid = data.snapToGrid !== false;
+        fullscreenAllMode = data.fullscreenAllMode === true;
+        if (data.gridSplitRatios) gridSplitRatios = data.gridSplitRatios;
 
         for (const saved of data.sessions) {
           // Restore scrollback before creating session
@@ -4577,6 +4624,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (saved.freeformRect) {
             sessions[idx].freeformRect = saved.freeformRect;
           }
+          if (typeof saved.fontSize === 'number' && sessions[idx].terminal.setFontSize) {
+            sessions[idx].terminal.setFontSize(saved.fontSize);
+          }
         }
         if (fullscreenAllMode) {
           const fi = (data.focused_index >= 0 && data.focused_index < sessions.length) ? data.focused_index : 0;
@@ -4588,6 +4638,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateLayoutToggleUI();
         if (data.focused_index >= 0 && data.focused_index < sessions.length) {
           setFocus(data.focused_index);
+        }
+        // Restore UI state (sidebar collapsed, active panels)
+        if (data.ui) {
+          const sidebar = document.getElementById('sidebar');
+          if (sidebar && data.ui.sidebarCollapsed) sidebar.classList.add('collapsed');
+          if (sidebar && typeof data.ui.sidebarWidth === 'number' && data.ui.sidebarWidth > 0) {
+            sidebar.style.width = `${data.ui.sidebarWidth}px`;
+          }
+          const footer = document.getElementById('footer');
+          if (footer && typeof data.ui.footerHeight === 'number' && data.ui.footerHeight > 0) {
+            footer.style.height = `${data.ui.footerHeight}px`;
+          }
         }
         restored = true;
       }

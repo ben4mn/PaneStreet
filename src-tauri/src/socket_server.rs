@@ -6,7 +6,7 @@ use tokio::net::UnixListener;
 
 use crate::pty_manager;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[allow(dead_code)]
 struct SocketCommand {
     cmd: String,
@@ -56,8 +56,11 @@ fn socket_path() -> PathBuf {
 pub fn start(app_handle: tauri::AppHandle) {
     let path = socket_path();
 
-    // Remove stale socket file
-    let _ = std::fs::remove_file(&path);
+    // Distinguish stale socket from live instance — refuse to stomp a live peer
+    if let Err(e) = prepare_socket(&path) {
+        eprintln!("[socket_server] {}", e);
+        return;
+    }
 
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -318,7 +321,7 @@ pub fn start_http(app_handle: tauri::AppHandle) {
             };
 
             let port_file = http_hook_port_path();
-            if let Err(e) = std::fs::write(&port_file, port.to_string()) {
+            if let Err(e) = write_port_file_atomic(&port_file, port) {
                 eprintln!("[http_hook] Failed to write port file: {}", e);
             }
 
@@ -339,6 +342,43 @@ pub fn start_http(app_handle: tauri::AppHandle) {
     });
 }
 
+pub fn prepare_socket(path: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::net::UnixStream as StdUnixStream;
+    if !path.exists() {
+        return Ok(());
+    }
+    // If a live listener is accepting connections, another instance is running.
+    match StdUnixStream::connect(path) {
+        Ok(_) => Err(format!(
+            "Another pane-street instance appears to be running (socket {} is live)",
+            path.display()
+        )),
+        Err(_) => {
+            // Stale file — safe to remove and proceed
+            std::fs::remove_file(path)
+                .map_err(|e| format!("Failed to remove stale socket {}: {}", path.display(), e))?;
+            Ok(())
+        }
+    }
+}
+
+pub fn write_port_file_atomic(path: &std::path::Path, port: u16) -> std::io::Result<()> {
+    let tmp = path.with_extension("port.tmp");
+    std::fs::write(&tmp, port.to_string())?;
+    std::fs::rename(&tmp, path)
+}
+
+pub fn extract_http_body(request: &str) -> &str {
+    // Prefer CRLF+CRLF; fall back to LF+LF for non-spec-compliant clients.
+    if let Some(i) = request.find("\r\n\r\n") {
+        return &request[i + 4..];
+    }
+    if let Some(i) = request.find("\n\n") {
+        return &request[i + 2..];
+    }
+    ""
+}
+
 async fn handle_http_connection(mut stream: tokio::net::TcpStream, app: tauri::AppHandle) {
     let mut buf = vec![0u8; 8192];
     let n = match stream.read(&mut buf).await {
@@ -349,10 +389,7 @@ async fn handle_http_connection(mut stream: tokio::net::TcpStream, app: tauri::A
     let request = String::from_utf8_lossy(&buf[..n]);
 
     // Extract body: everything after the blank line
-    let body = request
-        .find("\r\n\r\n")
-        .map(|i| &request[i + 4..])
-        .unwrap_or("");
+    let body = extract_http_body(&request);
 
     let response = match parse_hook_http_body(body) {
         Ok(_cmd) => {
@@ -423,5 +460,138 @@ mod tests {
     fn build_response_has_content_length() {
         let resp = build_hook_http_response(true, None);
         assert!(resp.contains("Content-Length:"));
+    }
+
+    #[test]
+    fn prepare_socket_removes_stale_file() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("ps_sock_stale_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("panestreet.sock");
+
+        // Arrange: create a stale file at the socket path (nobody listening)
+        std::fs::write(&path, b"stale").unwrap();
+        assert!(path.exists());
+
+        // Act
+        prepare_socket(&path).expect("stale socket should be cleared");
+
+        // Assert: file is gone, ready for bind
+        assert!(!path.exists(), "prepare_socket should remove stale file");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prepare_socket_refuses_when_listener_alive() {
+        use std::os::unix::net::UnixListener as StdUnixListener;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("ps_sock_live_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("panestreet.sock");
+
+        // Arrange: bind a live listener on the socket path
+        let _listener = StdUnixListener::bind(&path).expect("bind test listener");
+
+        // Act + Assert: prepare_socket must refuse (another instance is live)
+        let result = prepare_socket(&path);
+        assert!(
+            result.is_err(),
+            "prepare_socket must return Err when another instance is live"
+        );
+
+        drop(_listener);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prepare_socket_succeeds_when_path_is_empty() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("ps_sock_empty_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("panestreet.sock");
+
+        prepare_socket(&path).expect("empty path should be fine");
+        assert!(!path.exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_body_handles_crlf_separator() {
+        let req = "POST / HTTP/1.1\r\nHost: x\r\n\r\n{\"a\":1}";
+        assert_eq!(extract_http_body(req), "{\"a\":1}");
+    }
+
+    #[test]
+    fn extract_body_handles_lf_only_separator() {
+        let req = "POST / HTTP/1.1\nHost: x\n\n{\"a\":1}";
+        assert_eq!(extract_http_body(req), "{\"a\":1}");
+    }
+
+    #[test]
+    fn extract_body_prefers_crlf_when_both_present() {
+        let req = "POST / HTTP/1.1\r\nHost: x\r\n\r\nbody\nwith\nnewlines";
+        assert_eq!(extract_http_body(req), "body\nwith\nnewlines");
+    }
+
+    #[test]
+    fn extract_body_returns_empty_when_no_separator() {
+        assert_eq!(extract_http_body("GET / HTTP/1.1"), "");
+    }
+
+    #[test]
+    fn port_file_write_is_atomic() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let tmp = std::env::temp_dir().join(format!("ps_port_{}_{}", std::process::id(), n));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("http-hook-port");
+
+        // Writer thread: alternates between two valid ports quickly
+        let path_w = path.clone();
+        let writer = std::thread::spawn(move || {
+            for i in 0..200u16 {
+                let p = 40000u16 + (i % 10);
+                write_port_file_atomic(&path_w, p).unwrap();
+            }
+        });
+
+        // Reader: whenever the file exists, contents must parse to a u16
+        let path_r = path.clone();
+        let reader = std::thread::spawn(move || {
+            for _ in 0..500 {
+                if let Ok(contents) = std::fs::read_to_string(&path_r) {
+                    assert!(
+                        !contents.is_empty(),
+                        "port file must never be empty when present"
+                    );
+                    contents
+                        .trim()
+                        .parse::<u16>()
+                        .expect("port file must always be a valid u16");
+                }
+            }
+        });
+
+        writer.join().unwrap();
+        reader.join().unwrap();
+
+        // After writes complete, no .tmp artifact should linger
+        let tmp_artifact = path.with_extension("port.tmp");
+        assert!(
+            !tmp_artifact.exists(),
+            "tmp artifact should have been renamed"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

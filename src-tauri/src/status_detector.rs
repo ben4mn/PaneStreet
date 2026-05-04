@@ -257,19 +257,47 @@ fn analyze_buffer(buffer: &[u8]) -> SessionStatus {
     // Error patterns anchored to the last 3 lines only to avoid false positives
     // from help text, test output, code comments, etc.
     let recent = last_n_lines(tail, 3).to_lowercase();
-    if recent.contains("command not found")
-        || recent.contains("no such file or directory")
-        || recent.contains("panic:")
-        || recent.contains("traceback (most recent call last)")
-        || recent.contains("syntaxerror:")
-        || recent.contains("typeerror:")
-        || recent.contains("referenceerror:")
-    {
+    if is_shell_error(&recent) {
         return SessionStatus::Error;
     }
 
     // If we just received output, we're working
     SessionStatus::Working
+}
+
+fn is_shell_error(recent_lower: &str) -> bool {
+    // Require the shell's actual error format ("<cmd>: command not found") with a colon,
+    // so prose like "If you see 'command not found', install..." doesn't trigger.
+    // For panic/traceback/*Error markers, require them to be at line start (after optional whitespace)
+    // to avoid matching mid-sentence prose.
+    for line in recent_lower.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("panic:")
+            || trimmed.starts_with("traceback (most recent call last)")
+            || trimmed.starts_with("syntaxerror:")
+            || trimmed.starts_with("typeerror:")
+            || trimmed.starts_with("referenceerror:")
+        {
+            return true;
+        }
+        // Shell "command not found" — require a colon before the phrase, which is the
+        // format emitted by bash/zsh ("foobar: command not found"). Guard against the
+        // quoted-in-prose form by rejecting when the phrase sits inside a quote.
+        if let Some(idx) = line.find(": command not found") {
+            let before = &line[..idx];
+            let unbalanced_squote = before.matches('\'').count() % 2 == 1;
+            let unbalanced_dquote = before.matches('"').count() % 2 == 1;
+            if !unbalanced_squote && !unbalanced_dquote {
+                return true;
+            }
+        }
+        // Shell "No such file or directory" — same anchoring: real form is
+        // "cp: foo: No such file or directory", always preceded by a colon.
+        if line.contains(": no such file or directory") {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn emit_status(session_id: &str, status: &str, exit_code: Option<i32>) {
