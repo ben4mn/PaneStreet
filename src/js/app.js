@@ -7,7 +7,7 @@ import { getProfiles } from './session-profiles.js';
 import { getSnapshots, saveSnapshot } from './layout-snapshots.js';
 import { groupNotifications, sendDesktopNotification } from './notification-utils.js';
 import { escapeHtml } from './markdown.js';
-import { addNotification, removeNotificationsForSession, getNotifications, getUnreadCount, markAllRead, clearNotifications, shouldSendOSNotification, getOSNotificationMessage } from './notification-manager.js';
+import { addNotification, removeNotificationsForSession, getNotifications, getUnreadCount, markAllRead, clearNotifications, shouldSendOSNotification, getOSNotificationMessage, canSendOSNotification } from './notification-manager.js';
 import { STATUS_COLORS, computeStatusUpdate } from './status-utils.js';
 import { shouldShowSpeech, resetMascotPreferences, getMascotDiagnostics, claimMascotInit, registerMascotActions } from './mascot-utils.js';
 import { findAutoMinimizeTarget, formatAutoMinimizeMessage, createDebouncedSaver, buildSessionStatePayload, migrateSessionState, resolveScrollbackLines } from './session-utils.js';
@@ -2548,6 +2548,10 @@ async function maybeNotify(session, status) {
   };
 
   if (!shouldSendOSNotification(status, settings, isActiveTab, windowFocused)) return;
+
+  // Collapse bursty sequences (e.g. Stop immediately followed by a Notification
+  // hook from the same pane) into a single OS toast within a short window.
+  if (!canSendOSNotification(session.id)) return;
 
   const msg = getOSNotificationMessage(status);
   if (!msg) return;

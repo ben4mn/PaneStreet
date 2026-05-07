@@ -1,4 +1,4 @@
-import { correlateHookSession, buildHookNotification } from '../hook-utils.js';
+import { correlateHookSession, buildHookNotification, snippet } from '../hook-utils.js';
 
 describe('correlateHookSession', () => {
   it('returns matching index when sessionId found', () => {
@@ -77,5 +77,65 @@ describe('buildHookNotification', () => {
   it('returns notification for SessionStart event', () => {
     const result = buildHookNotification('SessionStart', { session_id: 's1' });
     expect(result).not.toBeNull();
+  });
+});
+
+describe('snippet', () => {
+  it('returns empty string for null/undefined/empty input', () => {
+    expect(snippet(null)).toBe('');
+    expect(snippet(undefined)).toBe('');
+    expect(snippet('')).toBe('');
+  });
+
+  it('returns the full text when shorter than max', () => {
+    expect(snippet('short reply')).toBe('short reply');
+  });
+
+  it('splits on the first sentence-ending punctuation', () => {
+    expect(snippet('All done. Ready for more.')).toBe('All done');
+    expect(snippet('Wait! I see a problem.')).toBe('Wait');
+    expect(snippet('Is that right? Let me check.')).toBe('Is that right');
+  });
+
+  it('truncates with an ellipsis past the max length', () => {
+    const long = 'a'.repeat(80);
+    const out = snippet(long, 60);
+    expect(out.length).toBeLessThanOrEqual(60);
+    expect(out.endsWith('…')).toBe(true);
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(snippet('   padded text   ')).toBe('padded text');
+  });
+
+  it('coerces non-string input to string safely', () => {
+    expect(snippet(42)).toBe('42');
+  });
+});
+
+describe('mascotQuip propagation', () => {
+  it('uses Claude last_message snippet as mascotQuip on Stop', () => {
+    const result = buildHookNotification('Stop', { last_message: 'Refactored the file tree. Tests green.' });
+    expect(result.mascotQuip).toBe('Refactored the file tree');
+  });
+
+  it('falls back to default quip when last_message is empty', () => {
+    const result = buildHookNotification('Stop', { last_message: '' });
+    expect(result.mascotQuip).toBe('All done.');
+  });
+
+  it('uses message snippet on Notification event', () => {
+    const result = buildHookNotification('Notification', { message: 'Allow access to file?' });
+    expect(result.mascotQuip).toBe('Allow access to file');
+  });
+
+  it('falls back to permission-prompt quip when message empty', () => {
+    const result = buildHookNotification('Notification', { type: 'permission_prompt', message: '' });
+    expect(result.mascotQuip).toBe('Approval needed.');
+  });
+
+  it('uses error snippet on StopFailure', () => {
+    const result = buildHookNotification('StopFailure', { error: 'Out of context window. Consider /compact.' });
+    expect(result.mascotQuip).toBe('Out of context window');
   });
 });

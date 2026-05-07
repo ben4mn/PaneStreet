@@ -9,6 +9,9 @@ import {
   resetNotificationManager,
   shouldSendOSNotification,
   getOSNotificationMessage,
+  markSessionRead,
+  canSendOSNotification,
+  resetOSNotificationDebounce,
 } from '../notification-manager.js';
 
 describe('notification-manager', () => {
@@ -111,6 +114,61 @@ describe('notification-manager', () => {
       markAllRead();
       addNotification('b', 'T2', 'Idle');
       expect(getUnreadCount()).toBe(1);
+    });
+
+    it('unread count stays accurate after the history cap trims old entries', () => {
+      // Pre-bug: unread was a bare counter that kept incrementing past MAX.
+      for (let i = 0; i < 150; i++) addNotification(`id-${i}`, `T${i}`, 'ClaudeFinished');
+      // History is capped at 100, so unread should at most equal remaining entries.
+      expect(getUnreadCount()).toBeLessThanOrEqual(getNotifications().length);
+    });
+
+    it('markAllRead stamps entries so count recomputes correctly after re-add', () => {
+      addNotification('a', 'T1', 'Working');
+      markAllRead();
+      // Adding a fresh one should put count back to 1, not carry over stale state.
+      addNotification('b', 'T2', 'Idle');
+      expect(getUnreadCount()).toBe(1);
+      markAllRead();
+      expect(getUnreadCount()).toBe(0);
+    });
+
+    it('markSessionRead clears unread only for the given session', () => {
+      addNotification('a', 'T1', 'Working');
+      addNotification('a', 'T1', 'Idle');
+      addNotification('b', 'T2', 'Error');
+      expect(getUnreadCount()).toBe(3);
+      markSessionRead('a');
+      expect(getUnreadCount()).toBe(1);
+    });
+  });
+
+  describe('canSendOSNotification (debounce)', () => {
+    beforeEach(() => resetOSNotificationDebounce());
+
+    it('allows the first notification for a session', () => {
+      expect(canSendOSNotification('s1', 1000)).toBe(true);
+    });
+
+    it('suppresses a second notification within the debounce window', () => {
+      canSendOSNotification('s1', 1000);
+      expect(canSendOSNotification('s1', 1500)).toBe(false);
+    });
+
+    it('allows again after the debounce window elapses', () => {
+      canSendOSNotification('s1', 1000);
+      expect(canSendOSNotification('s1', 3500)).toBe(true);
+    });
+
+    it('tracks different sessions independently', () => {
+      canSendOSNotification('s1', 1000);
+      expect(canSendOSNotification('s2', 1100)).toBe(true);
+    });
+
+    it('accepts a custom window in ms', () => {
+      canSendOSNotification('s1', 1000, 500);
+      expect(canSendOSNotification('s1', 1300, 500)).toBe(false);
+      expect(canSendOSNotification('s1', 1600, 500)).toBe(true);
     });
   });
 
