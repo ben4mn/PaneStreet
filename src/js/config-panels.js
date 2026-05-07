@@ -151,6 +151,8 @@ function checkSettingsDirty() {
     robotEnabled: String(container.querySelector('#pref-robot')?.checked ?? true),
     robotFrequency: container.querySelector('#pref-robot-frequency')?.value || 'medium',
     robotStandStill: String(container.querySelector('#pref-robot-standstill')?.checked ?? false),
+    narratorEnabled: String(container.querySelector('#pref-narrator')?.checked ?? true),
+    narratorTone: container.querySelector('#pref-narrator-tone')?.value || 'neutral',
   };
   return JSON.stringify(current) !== JSON.stringify(savedSettingsSnapshot);
 }
@@ -483,6 +485,29 @@ async function renderSettingsTab(tab) {
 
           <div class="setting-row-inline" style="padding-top:8px">
             <div>
+              <div class="setting-label">Narrator mode</div>
+              <div class="setting-description">Mascot surveys all Claude panes and announces status</div>
+            </div>
+            <label class="setting-switch" title="When off, the mascot still animates but won't narrate pane status">
+              <input type="checkbox" id="pref-narrator" ${localStorage.getItem('ps-narrator-enabled') !== 'false' ? 'checked' : ''} />
+              <span class="setting-switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row-inline" style="padding-top:8px">
+            <div>
+              <div class="setting-label">Narrator tone</div>
+              <div class="setting-description">Phrasing style for the mascot's cross-pane announcements</div>
+            </div>
+            <select id="pref-narrator-tone" class="form-input" style="width:auto;min-width:130px" title="Enthusiastic = cheerleader. Neutral = plain. Terse = one-liners only.">
+              <option value="neutral" ${(localStorage.getItem('ps-narrator-tone') || 'neutral') === 'neutral' ? 'selected' : ''}>Neutral</option>
+              <option value="enthusiastic" ${localStorage.getItem('ps-narrator-tone') === 'enthusiastic' ? 'selected' : ''}>Enthusiastic</option>
+              <option value="terse" ${localStorage.getItem('ps-narrator-tone') === 'terse' ? 'selected' : ''}>Terse</option>
+            </select>
+          </div>
+
+          <div class="setting-row-inline" style="padding-top:8px">
+            <div>
               <div class="setting-label">Claude Code hooks</div>
               <div class="setting-description">Auto-install hooks so Pane reacts to Claude Code events</div>
             </div>
@@ -567,6 +592,8 @@ async function renderSettingsTab(tab) {
       localStorage.setItem('ps-robot-enabled', robotChecked);
       localStorage.setItem('ps-robot-frequency', container.querySelector('#pref-robot-frequency').value);
       localStorage.setItem('ps-robot-standstill', container.querySelector('#pref-robot-standstill').checked);
+      localStorage.setItem('ps-narrator-enabled', container.querySelector('#pref-narrator').checked);
+      localStorage.setItem('ps-narrator-tone', container.querySelector('#pref-narrator-tone').value);
       // Claude Code hooks toggle
       const hooksEnabled = container.querySelector('#pref-hooks').checked;
       if (hooksEnabled) {

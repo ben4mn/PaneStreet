@@ -458,6 +458,7 @@ async function renderCodeContent(text, ext, container) {
   const backBtn = document.createElement('button');
   backBtn.className = 'fv-back-to-tree';
   backBtn.textContent = '\u2190 Back to files';
+  backBtn.title = 'Return to the file tree';
   backBtn.addEventListener('click', () => {
     selectedFile = null;
     currentDiffHunks = [];
@@ -477,16 +478,19 @@ async function renderCodeContent(text, ext, container) {
     const prevBtn = document.createElement('button');
     prevBtn.className = 'fv-action-btn';
     prevBtn.textContent = '\u2191 Prev';
+    prevBtn.title = 'Jump to previous change';
     prevBtn.addEventListener('click', () => jumpToDiffHunk(pre, -1));
 
     const nextBtn = document.createElement('button');
     nextBtn.className = 'fv-action-btn';
     nextBtn.textContent = '\u2193 Next';
+    nextBtn.title = 'Jump to next change';
     nextBtn.addEventListener('click', () => jumpToDiffHunk(pre, 1));
 
     const splitBtn = document.createElement('button');
     splitBtn.className = 'fv-action-btn';
     splitBtn.textContent = 'Split';
+    splitBtn.title = 'Switch to side-by-side diff view';
     splitBtn.addEventListener('click', () => {
       // Replace inline diff with split view
       pre.remove();
@@ -592,6 +596,7 @@ function renderMarkdownContent(text, container) {
   const backBtn = document.createElement('button');
   backBtn.className = 'fv-back-to-tree';
   backBtn.textContent = '\u2190 Back to files';
+  backBtn.title = 'Return to the file tree';
   backBtn.addEventListener('click', () => {
     selectedFile = null;
     showTree();

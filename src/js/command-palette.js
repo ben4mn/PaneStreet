@@ -88,12 +88,13 @@ export function showCommandPalette() {
     }
     selectedIndex = Math.min(selectedIndex, Math.max(0, items.length - 1));
 
-    list.innerHTML = items.map((a, i) =>
-      `<div class="palette-item ${i === selectedIndex ? 'active' : ''}" data-index="${i}">
+    list.innerHTML = items.map((a, i) => {
+      const tip = a.shortcut ? `${a.label} (${a.shortcut})` : a.label;
+      return `<div class="palette-item ${i === selectedIndex ? 'active' : ''}" data-index="${i}" title="${tip.replace(/"/g, '&quot;')}">
         <span class="palette-label">${a.label}</span>
         ${a.shortcut ? `<span class="palette-shortcut">${a.shortcut}</span>` : ''}
-      </div>`
-    ).join('');
+      </div>`;
+    }).join('');
 
     // Click handlers
     list.querySelectorAll('.palette-item').forEach((el, i) => {

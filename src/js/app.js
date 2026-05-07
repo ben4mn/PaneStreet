@@ -1486,6 +1486,7 @@ function updateFooterPills() {
     const restoreAll = document.createElement('button');
     restoreAll.className = 'restore-all-btn';
     restoreAll.textContent = 'Restore all';
+    restoreAll.title = 'Restore all minimized panes';
     restoreAll.addEventListener('click', () => restoreAllSessions());
     container.appendChild(restoreAll);
   }
@@ -2037,7 +2038,7 @@ function renderStashList(stashes, cwd) {
 
   const header = document.createElement('div');
   header.className = 'stash-header';
-  header.innerHTML = `<button class="fv-action-btn" id="stash-create-btn">New Stash</button>`;
+  header.innerHTML = `<button class="fv-action-btn" id="stash-create-btn" title="Create a new stash from current changes">New Stash</button>`;
 
   const list = document.createElement('div');
   list.className = 'stash-list';
@@ -2053,9 +2054,9 @@ function renderStashList(stashes, cwd) {
         <span class="stash-message">${s.message}</span>
         <span class="stash-date">${s.date}</span>
         <div class="stash-actions">
-          <button class="fv-action-btn stash-apply" data-idx="${s.index}">Apply</button>
-          <button class="fv-action-btn stash-pop" data-idx="${s.index}">Pop</button>
-          <button class="fv-action-btn stash-drop" data-idx="${s.index}">Drop</button>
+          <button class="fv-action-btn stash-apply" data-idx="${s.index}" title="Apply stash; keeps it in the list">Apply</button>
+          <button class="fv-action-btn stash-pop" data-idx="${s.index}" title="Apply and remove the stash">Pop</button>
+          <button class="fv-action-btn stash-drop" data-idx="${s.index}" title="Delete this stash permanently">Drop</button>
         </div>
       `;
       list.appendChild(entry);
