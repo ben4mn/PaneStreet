@@ -12,6 +12,7 @@ import { STATUS_COLORS, computeStatusUpdate } from './status-utils.js';
 import { shouldShowSpeech, resetMascotPreferences, getMascotDiagnostics, claimMascotInit, registerMascotActions } from './mascot-utils.js';
 import { findAutoMinimizeTarget, formatAutoMinimizeMessage, createDebouncedSaver, buildSessionStatePayload, migrateSessionState, resolveScrollbackLines } from './session-utils.js';
 import { correlateHookSession } from './hook-utils.js';
+import { handleClose as layoutOnClose, handleMinimize as layoutOnMinimize } from './layout-focus-state.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -1180,12 +1181,17 @@ async function removeSession(index) {
   // Clean up notifications for this session
   removeNotificationsForSession(session.id);
 
-  // Handle maximize state
-  if (maximizedIndex === index) {
-    maximizedIndex = null;
-  } else if (maximizedIndex !== null && maximizedIndex > index) {
-    maximizedIndex--;
-  }
+  // Handle maximize / focus-mode state: keep focus engaged if another pane remains.
+  const nextState = layoutOnClose({
+    maximizedIndex,
+    fullscreenAllMode,
+    focusedIndex,
+    closedIndex: index,
+    totalSessions: sessions.length,
+  });
+  maximizedIndex = nextState.maximizedIndex;
+  fullscreenAllMode = nextState.fullscreenAllMode;
+  focusedIndex = nextState.focusedIndex;
 
   await session.terminal.destroy();
   if (session.pane.parentNode) session.pane.remove();
@@ -1315,10 +1321,16 @@ function minimizeSession(index) {
 
   sessions[index].minimized = true;
 
-  // Exit maximize mode if minimizing the maximized session
-  if (maximizedIndex === index) {
-    maximizedIndex = null;
-  }
+  // Preserve focus mode: if the minimized pane was maximized, promote
+  // the next visible pane instead of dropping out of focus mode.
+  const nextState = layoutOnMinimize({
+    maximizedIndex,
+    fullscreenAllMode,
+    minimizedIndex: index,
+    sessions,
+  });
+  maximizedIndex = nextState.maximizedIndex;
+  fullscreenAllMode = nextState.fullscreenAllMode;
 
   // Move focus to next visible, or leave unfocused if all minimized
   if (focusedIndex === index) {
