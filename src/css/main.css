@@ -1374,7 +1374,10 @@ html, body {
   font-size: 9px;
 }
 
-/* Robot overlay — walks over all content */
+/* Robot overlay — walks over all content.
+ * z-index 2500 clears in-app modals (dialog-overlay sits at 2000).
+ * translateZ + will-change promote this to its own compositor layer so
+ * xterm.js's WebGL canvas can't paint over the mascot. */
 #robot-overlay {
   position: fixed;
   bottom: var(--footer-height);
@@ -1382,8 +1385,10 @@ html, body {
   right: 0;
   height: 80px;
   pointer-events: none;
-  z-index: 100;
+  z-index: 2500;
   overflow: visible;
+  transform: translateZ(0);
+  will-change: transform;
   transition: left 0.25s ease, bottom 0.2s ease;
 }
 
@@ -2340,7 +2345,7 @@ html, body {
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;
-  z-index: 10;
+  z-index: 20;
   border: 0.5px solid #444;
 }
 .mascot-speech.visible { opacity: 1; }
