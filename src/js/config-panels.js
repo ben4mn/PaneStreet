@@ -1,5 +1,6 @@
 const { invoke } = window.__TAURI__.core;
 import { getProfiles, saveProfile, deleteProfile } from './session-profiles.js';
+import { findKeybindingConflicts } from './keybinding-conflicts.js';
 import { parseMarkdown, initMermaidBlocks } from './markdown.js';
 import { CHANGELOG_ENTRIES } from './changelog-data.js';
 
@@ -1129,6 +1130,14 @@ function renderKeysTab(container) {
   const shortcuts = loadShortcuts();
   const categories = [...new Set(shortcuts.map(s => s.category))];
 
+  const conflicts = findKeybindingConflicts(shortcuts);
+  const conflictBanner = conflicts.length > 0
+    ? `<div class="keys-conflict-banner">
+         <strong>${conflicts.length} shortcut conflict${conflicts.length === 1 ? '' : 's'}:</strong>
+         ${conflicts.map(c => `<div>${c.shortcut} — ${c.ids.join(', ')}</div>`).join('')}
+       </div>`
+    : '';
+
   let html = `
     <div class="keys-header">
       <div class="keys-header-text">
@@ -1137,6 +1146,7 @@ function renderKeysTab(container) {
       </div>
       <button class="keys-reset-btn" id="keys-reset" title="Reset all to defaults">Reset All</button>
     </div>
+    ${conflictBanner}
   `;
 
   categories.forEach(cat => {
