@@ -2852,7 +2852,8 @@ function startNarratorCheck() {
     if (!robotEl || robotOverride || robotSpecialActive) return;
     const narration = narrateCrossPaneState(sessions);
     if (!shouldNarrateNow(narration, { lastAt: narratorLastAt, now: Date.now() })) return;
-    const quip = pickNarratorQuip(narration);
+    const tone = localStorage.getItem('ps-narrator-tone') || 'neutral';
+    const quip = pickNarratorQuip(narration, { tone });
     if (!quip) return;
     narratorLastAt = Date.now();
     showSpeech(quip, 3500, true);
