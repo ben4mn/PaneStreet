@@ -14,6 +14,7 @@ import { findAutoMinimizeTarget, formatAutoMinimizeMessage, createDebouncedSaver
 import { correlateHookSession } from './hook-utils.js';
 import { handleClose as layoutOnClose, handleMinimize as layoutOnMinimize } from './layout-focus-state.js';
 import { refineClaudeStatus, CLAUDE_SUB_STATUS } from './claude-pane-status.js';
+import { broadcastToClaudePanes, selectBroadcastTargets } from './broadcast-to-claude.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -4364,6 +4365,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   registerPaletteAction('prev-pane', 'Previous Pane', 'Cmd+Shift+[', () => focusNextVisible(focusedIndex, -1));
   registerPaletteAction('next-pane', 'Next Pane', 'Cmd+Shift+]', () => focusNextVisible(focusedIndex, 1));
+  registerPaletteAction('broadcast-claude', 'Send Prompt to All Claude Panes', null, async () => {
+    const targets = selectBroadcastTargets(sessions);
+    if (targets.length === 0) {
+      showSpeech('No Claude panes to broadcast to.', 2500);
+      return;
+    }
+    const promptText = prompt(`Broadcast to ${targets.length} Claude pane${targets.length === 1 ? '' : 's'}:`);
+    if (!promptText) return;
+    const result = await broadcastToClaudePanes(sessions, promptText, (sessionId, data) =>
+      invoke('write_to_pty', { sessionId, data })
+    );
+    const msg = result.failed.length > 0
+      ? `Sent to ${result.targeted}; ${result.failed.length} failed.`
+      : `Sent to ${result.targeted} Claude pane${result.targeted === 1 ? '' : 's'}.`;
+    showSpeech(msg, 3000);
+  });
   registerMascotActions({
     registerPaletteAction,
     onReset: () => {
