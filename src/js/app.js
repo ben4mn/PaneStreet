@@ -16,6 +16,7 @@ import { handleClose as layoutOnClose, handleMinimize as layoutOnMinimize } from
 import { refineClaudeStatus, CLAUDE_SUB_STATUS } from './claude-pane-status.js';
 import { broadcastToClaudePanes, selectBroadcastTargets } from './broadcast-to-claude.js';
 import { getSessionTemplates, saveSessionTemplate, deleteSessionTemplate, resolveSessionTemplate } from './session-templates.js';
+import { exportTemplate, parseTemplateImport } from './template-share.js';
 import { narrateCrossPaneState, pickNarratorQuip, shouldNarrateNow } from './companion-narrator.js';
 import { exportSettings, importSettings, parseSettingsPayload } from './settings-io.js';
 import { redactSecrets } from './redact-secrets.js';
@@ -4473,6 +4474,57 @@ document.addEventListener('DOMContentLoaded', async () => {
         command: current.claudeAttached ? 'claude' : 'bash',
       });
       showSpeech(`Saved template "${name}".`, 2500);
+    } catch (e) {
+      showSpeech(`Save failed: ${e.message}`, 3000);
+    }
+  });
+  registerPaletteAction('share-template', 'Share Template to Clipboard', null, async () => {
+    const templates = getSessionTemplates();
+    if (templates.length === 0) {
+      showSpeech('No templates to share.', 2500);
+      return;
+    }
+    const names = templates.map((t, i) => `${i + 1}. ${t.name}`).join('\n');
+    const picked = prompt(`Which template to share?\n${names}\n\nEnter number:`);
+    const idx = parseInt(picked, 10) - 1;
+    if (!Number.isInteger(idx) || idx < 0 || idx >= templates.length) return;
+    try {
+      const payload = exportTemplate(templates[idx]);
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      showSpeech(`Copied "${templates[idx].name}" to clipboard.`, 2500);
+    } catch (e) {
+      showSpeech(`Share failed: ${e.message}`, 3000);
+    }
+  });
+  registerPaletteAction('import-template', 'Import Template from Clipboard', null, async () => {
+    let raw;
+    try {
+      raw = await navigator.clipboard.readText();
+    } catch {
+      showSpeech('Clipboard read failed.', 2500);
+      return;
+    }
+    const existingNames = new Set(getSessionTemplates().map(t => t.name));
+    let parsed = parseTemplateImport(raw);
+    if (!parsed.ok) {
+      showSpeech(`Import failed: ${parsed.reason}`, 3500);
+      return;
+    }
+    if (existingNames.has(parsed.template.name)) {
+      const overwrite = confirm(`Template "${parsed.template.name}" already exists. Overwrite? Cancel to rename.`);
+      if (!overwrite) {
+        const newName = prompt('New template name:', `${parsed.template.name} (imported)`);
+        if (!newName) return;
+        parsed = parseTemplateImport(raw, { renameTo: newName });
+        if (!parsed.ok) {
+          showSpeech(`Import failed: ${parsed.reason}`, 3000);
+          return;
+        }
+      }
+    }
+    try {
+      saveSessionTemplate(parsed.template);
+      showSpeech(`Imported template "${parsed.template.name}".`, 3000);
     } catch (e) {
       showSpeech(`Save failed: ${e.message}`, 3000);
     }
