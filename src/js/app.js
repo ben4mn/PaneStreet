@@ -13,6 +13,7 @@ import { shouldShowSpeech, resetMascotPreferences, getMascotDiagnostics, claimMa
 import { findAutoMinimizeTarget, formatAutoMinimizeMessage, createDebouncedSaver, buildSessionStatePayload, migrateSessionState, resolveScrollbackLines } from './session-utils.js';
 import { correlateHookSession } from './hook-utils.js';
 import { handleClose as layoutOnClose, handleMinimize as layoutOnMinimize } from './layout-focus-state.js';
+import { refineClaudeStatus, CLAUDE_SUB_STATUS } from './claude-pane-status.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -2592,6 +2593,22 @@ function setupStatusListener() {
     // Update pane header dot + border
     session.statusDot.style.background = update.color;
     session.pane.dataset.status = status;
+
+    // Refine with Claude-aware sub-status from the tail of the buffer.
+    try {
+      const tail = session.terminal.getScrollback(20) || '';
+      const lines = tail.split('\n').slice(-20);
+      const refined = refineClaudeStatus(status, lines);
+      session.claudeAttached = refined.claudeAttached;
+      if (refined.subStatus) {
+        session.pane.dataset.claudeSub = refined.subStatus;
+      } else {
+        delete session.pane.dataset.claudeSub;
+      }
+    } catch (e) {
+      // getScrollback can throw if the terminal was destroyed mid-update.
+      delete session.pane.dataset.claudeSub;
+    }
 
     // Update sidebar card dot + border (single DOM query)
     const cards = document.querySelectorAll('.session-card');

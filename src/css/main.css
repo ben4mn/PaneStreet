@@ -732,6 +732,18 @@ html, body {
 .pane.focused[data-status="ClaudeFinished"]  { border-color: var(--status-idle); box-shadow: 0 0 0 1px var(--status-idle), 0 0 12px rgba(74, 222, 128, 0.2); }
 .pane.focused[data-status="Exited"]          { border-color: var(--status-exited); box-shadow: 0 0 0 1px var(--status-exited), 0 0 12px rgba(239, 68, 68, 0.2); }
 
+/* Claude-aware sub-status refinements. Layer on top of the base status
+ * color so the distinction is visible at a glance without screaming. */
+.pane[data-claude-sub="PermissionPrompt"] { border-color: rgba(245, 158, 11, 0.9); animation: claude-permission-pulse 1.2s ease-in-out infinite; }
+.pane[data-claude-sub="PlanMode"]         { border-color: rgba(168, 85, 247, 0.6); border-style: dashed; }
+.pane[data-claude-sub="StoppedAlive"]     { border-color: rgba(148, 163, 184, 0.45); }
+.pane[data-claude-sub="Thinking"]         { border-color: rgba(42, 109, 240, 0.7); }
+
+@keyframes claude-permission-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.6), 0 0 8px rgba(245, 158, 11, 0.2); }
+  50%      { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.9), 0 0 16px rgba(245, 158, 11, 0.4); }
+}
+
 /* Notification ring — pulsing glow on unfocused panes that need attention */
 .pane.notify-ring:not(.focused)[data-status="WaitingForInput"] {
   animation: notify-ring-waiting 2s ease-in-out infinite;
