@@ -3,6 +3,21 @@
 
 export const CHANGELOG_ENTRIES = [
   {
+    version: 'v0.4.46',
+    date: '2026-05-07',
+    body: `
+- **Companion stays on top of terminal panes** — The mascot no longer vanishes behind the xterm.js WebGL canvas. It now lives on its own compositor layer and properly clears in-app modals.
+- **Focus mode survives pane close & minimize** — Closing or minimizing the focused pane now promotes the next pane into focus instead of silently dropping out to the grid. The focus button and visible layout stay in sync.
+- **Tile exits focus mode cleanly** — Clicking Tile while in focus mode now exits focus explicitly, so the focus button doesn't end up stuck active over a tiled layout.
+- **Freeform focus drops dead handles** — In freeform layout, the fullscreened pane no longer shows drag handles it can't actually use.
+- **Focus mode persists across restarts** — The maximized pane index is now saved with session state, so relaunching keeps you on the exact pane you were focused on (not just a best guess from focused_index).
+- **Companion speaks as Claude** — The mascot's speech bubble now surfaces a snippet of Claude's actual last message on Stop / Notification / StopFailure hooks, instead of always saying "All done."
+- **Notification debounce** — Bursty Stop→Notification sequences from a single Claude turn now collapse into one OS toast instead of two.
+- **Accurate unread counter** — Notification unread count now tracks per-entry read state, so it no longer drifts when the history cap trims old notifications.
+- **Full Disk Access guide** — New \`docs/full-disk-access.md\` explains how to grant PaneStreet one-time file access and stop the repeated macOS permission prompts.
+`
+  },
+  {
     version: 'v0.4.45',
     date: '2026-05-04',
     body: `
