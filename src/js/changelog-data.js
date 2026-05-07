@@ -3,6 +3,20 @@
 
 export const CHANGELOG_ENTRIES = [
   {
+    version: 'v0.4.47',
+    date: '2026-05-07',
+    body: `
+- **Claude-aware pane borders** — Panes now show richer sub-status beyond Working/Idle: pulsing amber when a permission prompt is waiting, dashed purple in plan mode, brighter blue while Claude is thinking, muted grey when Claude has exited but the shell is still open.
+- **Send a prompt to all Claude panes at once** — New command palette action "Send Prompt to All Claude Panes" broadcasts a prompt (plus return) to every Claude-attached, non-minimized pane. Great for multi-agent workflows.
+- **Session templates** — Name a recipe of cwd + command + env and launch it as a pre-configured pane. Templates show up in the command palette as "Template: <name>". Also new: "Save Current Pane as Template".
+- **Companion narrator mode** — Every few seconds the mascot aggregates across all Claude panes and speaks a single prioritized quip: urgent when permission's needed, attention when Claude needs input, a status summary otherwise. Toggle with \`ps-narrator-enabled\` in localStorage.
+- **Settings export / import** — New palette actions copy all ps-* settings to the clipboard as versioned JSON and paste them back on another machine. Pragmatic alternative to cloud sync. API keys and other secret-shaped values are excluded from the export automatically.
+- **Hook payload redaction** — Before hook messages reach the UI or logs, common API keys (Anthropic, OpenAI, GitHub, Slack, AWS) and bearer tokens are redacted in-place. Idempotent; screenshots won't accidentally leak a key anymore.
+- **Keybinding conflict detector** — The shortcuts settings tab now shows a warning banner listing any shortcut assigned to more than one action, with the colliding action ids.
+- **Smart default pane names** — New panes are named after their cwd basename (plus the running command when detected) instead of "Terminal N". \`my-repo (claude)\` / \`my-repo (npm)\` / just \`my-repo\` for a plain shell.
+`
+  },
+  {
     version: 'v0.4.46',
     date: '2026-05-07',
     body: `
