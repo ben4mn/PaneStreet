@@ -3,6 +3,13 @@
 
 export const CHANGELOG_ENTRIES = [
   {
+    version: 'v0.4.50',
+    date: '2026-05-07',
+    body: `
+- **Mascot visibility while dragging** — Follow-up to v0.4.49. The mascot is now promoted to its own GPU compositor layer so the xterm terminal canvas can't paint over it during drag across the main terminal view or while it's parked in the sidebar. Drag and drag-into-sidebar still work.
+`
+  },
+  {
     version: 'v0.4.49',
     date: '2026-05-07',
     body: `

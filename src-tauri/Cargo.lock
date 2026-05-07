@@ -2724,7 +2724,7 @@ dependencies = [
 
 [[package]]
 name = "pane-street"
-version = "0.4.49"
+version = "0.4.50"
 dependencies = [
  "base64 0.22.1",
  "dirs",
