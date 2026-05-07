@@ -19,6 +19,7 @@ import { getSessionTemplates, saveSessionTemplate, deleteSessionTemplate, resolv
 import { narrateCrossPaneState, pickNarratorQuip, shouldNarrateNow } from './companion-narrator.js';
 import { exportSettings, importSettings, parseSettingsPayload } from './settings-io.js';
 import { redactSecrets } from './redact-secrets.js';
+import { smartPaneName } from './smart-pane-name.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -1070,7 +1071,11 @@ function createPane(name) {
 // --- Session Lifecycle ---
 
 async function createSession(restoreCwd, restoreScrollback) {
-  const sessionName = `Terminal ${nextTerminalNumber()}`;
+  const fallback = `Terminal ${nextTerminalNumber()}`;
+  const seedCwd = restoreCwd || localStorage.getItem('ps-default-dir') || '';
+  const sessionName = restoreScrollback
+    ? fallback
+    : smartPaneName({ cwd: seedCwd, fallback });
 
   // Cap at 6 visible — auto-minimize oldest visible if needed
   const autoMinIdx = findAutoMinimizeTarget(sessions, 6);
