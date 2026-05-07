@@ -3,6 +3,13 @@
 
 export const CHANGELOG_ENTRIES = [
   {
+    version: 'v0.4.49',
+    date: '2026-05-07',
+    body: `
+- **Mascot drag restored** — Fixes a regression from v0.4.46 where the mascot couldn't be dragged freely or dropped into the sidebar. The overlay's compositor-layer promotion now uses \`isolation\` instead of \`transform\`, which keeps the mascot visible over the terminal without trapping drag coordinates in the overlay's containing block.
+`
+  },
+  {
     version: 'v0.4.48',
     date: '2026-05-07',
     body: `
