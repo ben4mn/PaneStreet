@@ -3,6 +3,16 @@
 
 export const CHANGELOG_ENTRIES = [
   {
+    version: 'v0.4.48',
+    date: '2026-05-07',
+    body: `
+- **Templates tab in Settings** — Browse, create, edit, share, and delete session templates from a proper UI instead of only the command palette. Import pasted templates with a one-click button and rename on collision.
+- **Share templates across machines** — "Share Template to Clipboard" copies a single template as versioned JSON; "Import Template from Clipboard" round-trips it back on another machine. Env values that smell like secrets (api_key / token / credential / etc.) are redacted on export automatically.
+- **Narrator tone** — The mascot narrator now speaks in one of three voices: Neutral (default, matches v0.4.47), Enthusiastic (cheerleader energy), or Terse (≤30 chars per quip). Pick in Settings → General → Mascot.
+- **Tooltip sweep** — Every icon-only sidebar button now has a descriptive tooltip. Command palette rows explain what they do on hover. Git stash actions, diff navigation buttons, and "Restore all" are now self-documenting.
+`
+  },
+  {
     version: 'v0.4.47',
     date: '2026-05-07',
     body: `
