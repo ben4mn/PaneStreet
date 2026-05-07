@@ -17,6 +17,7 @@ import { refineClaudeStatus, CLAUDE_SUB_STATUS } from './claude-pane-status.js';
 import { broadcastToClaudePanes, selectBroadcastTargets } from './broadcast-to-claude.js';
 import { getSessionTemplates, saveSessionTemplate, deleteSessionTemplate, resolveSessionTemplate } from './session-templates.js';
 import { narrateCrossPaneState, pickNarratorQuip, shouldNarrateNow } from './companion-narrator.js';
+import { exportSettings, importSettings, parseSettingsPayload } from './settings-io.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -4423,6 +4424,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  registerPaletteAction('export-settings', 'Export Settings to Clipboard', null, async () => {
+    try {
+      const payload = exportSettings();
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      showSpeech('Settings copied to clipboard.', 2500);
+    } catch (e) {
+      showSpeech(`Export failed: ${e.message}`, 3000);
+    }
+  });
+  registerPaletteAction('import-settings', 'Import Settings from Clipboard', null, async () => {
+    let raw;
+    try {
+      raw = await navigator.clipboard.readText();
+    } catch {
+      showSpeech('Clipboard read failed.', 2500);
+      return;
+    }
+    const parsed = parseSettingsPayload(raw);
+    if (!parsed.ok) {
+      showSpeech(`Import failed: ${parsed.reason}`, 3500);
+      return;
+    }
+    const replace = confirm('Replace existing settings? Cancel to merge.');
+    const result = importSettings(parsed.payload, { mode: replace ? 'replace' : 'merge' });
+    if (result.ok) {
+      showSpeech(`Imported ${result.imported} settings. Restart to apply.`, 4000);
+    } else {
+      showSpeech(`Import failed: ${result.reason}`, 3000);
+    }
+  });
   registerPaletteAction('save-template', 'Save Current Pane as Template', null, () => {
     const current = sessions[focusedIndex];
     if (!current) return;

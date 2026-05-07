@@ -68,8 +68,9 @@ export function pickNarratorQuip(narration) {
   }[narration.severity];
   if (!pool) return null;
 
+  const seed = randomSeed();
   for (let i = 0; i < pool.length; i++) {
-    const pick = pool[(i + randomSeed()) % pool.length](narration);
+    const pick = pool[(i + seed) % pool.length](narration);
     if (pick) return pick;
   }
   return null;
