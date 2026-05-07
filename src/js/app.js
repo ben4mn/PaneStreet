@@ -15,6 +15,7 @@ import { correlateHookSession } from './hook-utils.js';
 import { handleClose as layoutOnClose, handleMinimize as layoutOnMinimize } from './layout-focus-state.js';
 import { refineClaudeStatus, CLAUDE_SUB_STATUS } from './claude-pane-status.js';
 import { broadcastToClaudePanes, selectBroadcastTargets } from './broadcast-to-claude.js';
+import { getSessionTemplates, saveSessionTemplate, deleteSessionTemplate, resolveSessionTemplate } from './session-templates.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -4397,6 +4398,46 @@ document.addEventListener('DOMContentLoaded', async () => {
       window.dispatchEvent(new CustomEvent('launch-profile', { detail: p }));
     });
   }
+
+  for (const t of getSessionTemplates()) {
+    registerPaletteAction(`template-${t.id}`, `Template: ${t.name}`, null, () => {
+      window.dispatchEvent(new CustomEvent('launch-template', { detail: t }));
+    });
+  }
+
+  registerPaletteAction('save-template', 'Save Current Pane as Template', null, () => {
+    const current = sessions[focusedIndex];
+    if (!current) return;
+    const name = prompt('Template name:');
+    if (!name) return;
+    try {
+      saveSessionTemplate({
+        name,
+        cwd: current.cwd || '',
+        command: current.claudeAttached ? 'claude' : 'bash',
+      });
+      showSpeech(`Saved template "${name}".`, 2500);
+    } catch (e) {
+      showSpeech(`Save failed: ${e.message}`, 3000);
+    }
+  });
+
+  window.addEventListener('launch-template', async (e) => {
+    const template = e.detail;
+    let resolved;
+    try {
+      resolved = resolveSessionTemplate(template);
+    } catch (err) {
+      showSpeech(`Template error: ${err.message}`, 3000);
+      return;
+    }
+    await createSession(resolved.cwd || undefined);
+    const session = sessions[sessions.length - 1];
+    setTimeout(() => {
+      const data = Array.from(new TextEncoder().encode(resolved.command + '\r'));
+      invoke('write_to_pty', { sessionId: session.id, data });
+    }, 300);
+  });
 
   // Handle profile launches
   window.addEventListener('launch-profile', async (e) => {
