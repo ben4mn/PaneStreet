@@ -16,6 +16,7 @@ import { handleClose as layoutOnClose, handleMinimize as layoutOnMinimize } from
 import { refineClaudeStatus, CLAUDE_SUB_STATUS } from './claude-pane-status.js';
 import { broadcastToClaudePanes, selectBroadcastTargets } from './broadcast-to-claude.js';
 import { getSessionTemplates, saveSessionTemplate, deleteSessionTemplate, resolveSessionTemplate } from './session-templates.js';
+import { narrateCrossPaneState, pickNarratorQuip, shouldNarrateNow } from './companion-narrator.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -2834,6 +2835,22 @@ function startOutputVelocityCheck() {
     outputByteCount = 0;
   }, 500);
 }
+
+let narratorLastAt = 0;
+let narratorTimer = null;
+function startNarratorCheck() {
+  if (narratorTimer) return;
+  narratorTimer = setInterval(() => {
+    if (localStorage.getItem('ps-narrator-enabled') === 'false') return;
+    if (!robotEl || robotOverride || robotSpecialActive) return;
+    const narration = narrateCrossPaneState(sessions);
+    if (!shouldNarrateNow(narration, { lastAt: narratorLastAt, now: Date.now() })) return;
+    const quip = pickNarratorQuip(narration);
+    if (!quip) return;
+    narratorLastAt = Date.now();
+    showSpeech(quip, 3500, true);
+  }, 5000);
+}
 function incrementCommandCount() {
   commandMilestoneCount++;
   localStorage.setItem('ps-command-count', commandMilestoneCount);
@@ -4106,6 +4123,7 @@ function setupMascotSpeech() {
   setupCaughtWatching();
   applyTimeOfDay();
   startOutputVelocityCheck();
+  startNarratorCheck();
 }
 
 let lastTipIndex = -1;
