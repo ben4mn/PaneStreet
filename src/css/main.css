@@ -1388,8 +1388,12 @@ html, body {
 
 /* Robot overlay — walks over all content.
  * z-index 2500 clears in-app modals (dialog-overlay sits at 2000).
- * translateZ + will-change promote this to its own compositor layer so
- * xterm.js's WebGL canvas can't paint over the mascot. */
+ * isolation: isolate creates a stacking context so xterm.js's WebGL
+ * canvas can't paint over the mascot. We previously used translateZ(0)
+ * here, but that made the overlay a containing block for position:fixed
+ * descendants, which broke the mascot's free-drag (it expects to be
+ * positioned against the viewport, not the 80px-tall overlay).
+ * isolation gives us the stacking promotion without that side effect. */
 #robot-overlay {
   position: fixed;
   bottom: var(--footer-height);
@@ -1399,8 +1403,7 @@ html, body {
   pointer-events: none;
   z-index: 2500;
   overflow: visible;
-  transform: translateZ(0);
-  will-change: transform;
+  isolation: isolate;
   transition: left 0.25s ease, bottom 0.2s ease;
 }
 
