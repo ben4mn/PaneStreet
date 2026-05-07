@@ -18,6 +18,7 @@ import { broadcastToClaudePanes, selectBroadcastTargets } from './broadcast-to-c
 import { getSessionTemplates, saveSessionTemplate, deleteSessionTemplate, resolveSessionTemplate } from './session-templates.js';
 import { narrateCrossPaneState, pickNarratorQuip, shouldNarrateNow } from './companion-narrator.js';
 import { exportSettings, importSettings, parseSettingsPayload } from './settings-io.js';
+import { redactSecrets } from './redact-secrets.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -4601,9 +4602,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Claude Code hook events — rich notifications from stdin JSON
+  // Claude Code hook events — rich notifications from stdin JSON.
+  // Redact API keys / bearer tokens out of message + last_msg before
+  // any UI render or log, so user environment leaks don't land in
+  // screenshots or the hooks.log file.
   listen('claude-hook-event', (event) => {
-    const { event: eventType, tool, message, title: hookTitle, ntype, last_msg, session: claudeSessionId } = event.payload;
+    const raw = event.payload || {};
+    const eventType = raw.event;
+    const tool = raw.tool;
+    const hookTitle = raw.title;
+    const ntype = raw.ntype;
+    const claudeSessionId = raw.session;
+    const message = redactSecrets(raw.message);
+    const last_msg = redactSecrets(raw.last_msg);
 
     // Build specific notification based on event type and available data
     let notifTitle = 'Claude Code';
