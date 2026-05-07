@@ -383,11 +383,12 @@ function applyFreeformLayout() {
   grid.className = 'freeform';
 
   if (maximizedIndex !== null && maximizedIndex < sessions.length) {
-    // Show only the maximized pane at full size
+    // Show only the maximized pane at full size. Skip drag handles —
+    // the pane is locked to 100%/100% and dragging it would just
+    // leave stale inline coords when focus mode clears.
     const s = sessions[maximizedIndex];
     s.pane.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;z-index:9;';
     grid.appendChild(s.pane);
-    addFreeformHandles(s.pane);
     requestAnimationFrame(() => fitVisibleTerminals());
     return;
   }
@@ -487,6 +488,15 @@ function autoTile() {
   const visible = sessions.filter(s => !s.minimized);
   const count = visible.length;
   if (count === 0) return;
+
+  // Tile is an explicit "expand everything" action — exit focus mode
+  // so the UI doesn't show the focus button stuck active over a tiled
+  // layout.
+  if (fullscreenAllMode || maximizedIndex !== null) {
+    fullscreenAllMode = false;
+    maximizedIndex = null;
+    updateLayoutToggleUI();
+  }
 
   // Switch to freeform if in auto mode
   if (layoutMode === 'auto') {
@@ -4265,6 +4275,7 @@ function buildSessionState() {
     layoutMode,
     snapToGrid,
     fullscreenAllMode,
+    maximizedIndex,
     gridSplitRatios,
     sessions: sessions.map(s => ({
       name: s.name,
@@ -4641,8 +4652,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
         if (fullscreenAllMode) {
-          const fi = (data.focused_index >= 0 && data.focused_index < sessions.length) ? data.focused_index : 0;
-          maximizedIndex = fi;
+          // Prefer the saved maximizedIndex; fall back to focused_index for
+          // pre-v4.1 session files that don't persist it.
+          let mi = (typeof data.maximizedIndex === 'number' && data.maximizedIndex >= 0 && data.maximizedIndex < sessions.length)
+            ? data.maximizedIndex
+            : ((data.focused_index >= 0 && data.focused_index < sessions.length) ? data.focused_index : 0);
+          maximizedIndex = mi;
         }
         rebuildSidebar();
         updateGridLayout();

@@ -32,6 +32,9 @@ export function buildSessionStatePayload(snapshot) {
     focused_index: snapshot.focusedIndex,
   };
   if (snapshot.ui) payload.ui = snapshot.ui;
+  if (typeof snapshot.maximizedIndex === 'number') {
+    payload.maximizedIndex = snapshot.maximizedIndex;
+  }
   return payload;
 }
 

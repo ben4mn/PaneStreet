@@ -166,6 +166,32 @@ describe('buildSessionStatePayload', () => {
     expect(payload.version).toBe(4);
     expect(payload.ui).toBeUndefined();
   });
+
+  it('persists maximizedIndex when provided', () => {
+    const payload = buildSessionStatePayload({
+      layoutMode: 'auto',
+      snapToGrid: true,
+      fullscreenAllMode: true,
+      maximizedIndex: 2,
+      gridSplitRatios: {},
+      sessions: [],
+      focusedIndex: 2,
+    });
+    expect(payload.maximizedIndex).toBe(2);
+  });
+
+  it('omits maximizedIndex when null', () => {
+    const payload = buildSessionStatePayload({
+      layoutMode: 'auto',
+      snapToGrid: true,
+      fullscreenAllMode: false,
+      maximizedIndex: null,
+      gridSplitRatios: {},
+      sessions: [],
+      focusedIndex: 0,
+    });
+    expect(payload.maximizedIndex).toBeUndefined();
+  });
 });
 
 describe('migrateSessionState', () => {
