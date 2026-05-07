@@ -1494,6 +1494,12 @@ html, body {
   cursor: pointer;
   transition: left 10s linear;
   overflow: visible;
+  /* Promote the mascot itself to its own GPU compositor layer so xterm's
+   * WebGL canvas can't paint over it. will-change (without an actual
+   * transform) gives us the layer without creating a containing block —
+   * crucial for the .drag-free state which relies on position: fixed
+   * resolving against the viewport. */
+  will-change: transform;
 }
 
 #footer-mascot svg {
