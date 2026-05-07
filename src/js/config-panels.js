@@ -1,6 +1,9 @@
 const { invoke } = window.__TAURI__.core;
 import { getProfiles, saveProfile, deleteProfile } from './session-profiles.js';
 import { findKeybindingConflicts } from './keybinding-conflicts.js';
+import { getSessionTemplates, saveSessionTemplate, deleteSessionTemplate } from './session-templates.js';
+import { exportTemplate, parseTemplateImport } from './template-share.js';
+import { renderTemplateCardsHTML } from './template-panel.js';
 import { parseMarkdown, initMermaidBlocks } from './markdown.js';
 import { CHANGELOG_ENTRIES } from './changelog-data.js';
 
@@ -195,6 +198,7 @@ async function renderSettingsPanel() {
     <div class="settings-tabs">
       <button class="settings-tab ${currentSettingsTab === 'general' ? 'active' : ''}" data-tab="general">General</button>
       <button class="settings-tab ${currentSettingsTab === 'profiles' ? 'active' : ''}" data-tab="profiles">Profiles</button>
+      <button class="settings-tab ${currentSettingsTab === 'templates' ? 'active' : ''}" data-tab="templates">Templates</button>
       <button class="settings-tab ${currentSettingsTab === 'keys' ? 'active' : ''}" data-tab="keys">Keys</button>
       <button class="settings-tab ${currentSettingsTab === 'theme' ? 'active' : ''}" data-tab="theme">Theme</button>
       <button class="settings-tab ${currentSettingsTab === 'auth' ? 'active' : ''}" data-tab="auth">Auth</button>
@@ -701,6 +705,9 @@ async function renderSettingsTab(tab) {
   } else if (tab === 'profiles') {
     renderProfilesTab(container);
 
+  } else if (tab === 'templates') {
+    renderTemplatesTab(container);
+
   } else if (tab === 'keys') {
     renderKeysTab(container);
 
@@ -1121,6 +1128,152 @@ function renderProfilesTab(container) {
       if (profile) {
         window.dispatchEvent(new CustomEvent('launch-profile', { detail: profile }));
         hidePanel();
+      }
+    };
+  });
+}
+
+function renderTemplatesTab(container) {
+  const templates = getSessionTemplates();
+
+  container.innerHTML = `
+    <div class="settings-group">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="setting-section-title" style="margin:0">Session Templates</div>
+        <div style="display:flex;gap:6px">
+          <button class="fv-action-btn" id="template-import-btn" title="Paste a shared template from the clipboard">Import</button>
+          <button class="settings-save-btn" id="template-new-btn" title="Create a new template">New Template</button>
+        </div>
+      </div>
+      <div class="setting-description" style="margin-bottom:12px">
+        Launch a pre-configured pane (working directory + startup command + env). Share templates across machines with Import / Share.
+      </div>
+      <div id="templates-list">${renderTemplateCardsHTML(templates)}</div>
+    </div>
+
+    <div id="template-form" style="display:none">
+      <div class="settings-group">
+        <div class="setting-section-title">New Template</div>
+        <div class="setting-row-stacked">
+          <div class="setting-label">Name</div>
+          <input type="text" class="form-input" id="template-name" placeholder="Bug Hunt" maxlength="60" />
+        </div>
+        <div class="setting-row-stacked">
+          <div class="setting-label">Working Directory</div>
+          <div class="setting-browse-row">
+            <input type="text" class="form-input" id="template-cwd" placeholder="~/project (leave empty for default)" style="flex:1" />
+            <button class="setting-browse-btn" id="template-browse" title="Pick a directory">Browse</button>
+          </div>
+        </div>
+        <div class="setting-row-stacked">
+          <div class="setting-label">Command</div>
+          <input type="text" class="form-input" id="template-command" placeholder="claude" />
+          <div class="setting-description">The command to run when the pane opens (e.g. <code>claude</code>, <code>npm run dev</code>).</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="settings-save-btn" id="template-save-btn">Save Template</button>
+          <button class="fv-action-btn" id="template-cancel-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const show = sel => container.querySelector(sel).style.display = '';
+  const hide = sel => container.querySelector(sel).style.display = 'none';
+
+  container.querySelector('#template-new-btn').onclick = () => {
+    show('#template-form');
+    hide('#template-new-btn');
+    container.querySelector('#template-name').focus();
+  };
+  container.querySelector('#template-cancel-btn').onclick = () => {
+    hide('#template-form');
+    show('#template-new-btn');
+  };
+  container.querySelector('#template-browse').onclick = async () => {
+    try {
+      const result = await invoke('plugin:dialog|open', {
+        options: { directory: true, multiple: false, title: 'Choose Directory' },
+      });
+      if (result) container.querySelector('#template-cwd').value = result;
+    } catch {}
+  };
+  container.querySelector('#template-save-btn').onclick = () => {
+    const name = container.querySelector('#template-name').value.trim();
+    const command = container.querySelector('#template-command').value.trim();
+    if (!name || !command) return;
+    try {
+      saveSessionTemplate({
+        name,
+        cwd: container.querySelector('#template-cwd').value.trim(),
+        command,
+      });
+      renderTemplatesTab(container);
+    } catch (e) {
+      alert(`Save failed: ${e.message}`);
+    }
+  };
+
+  container.querySelector('#template-import-btn').onclick = async () => {
+    let raw;
+    try {
+      raw = await navigator.clipboard.readText();
+    } catch {
+      alert('Clipboard read failed.');
+      return;
+    }
+    const existingNames = new Set(getSessionTemplates().map(t => t.name));
+    let parsed = parseTemplateImport(raw);
+    if (!parsed.ok) {
+      alert(`Import failed: ${parsed.reason}`);
+      return;
+    }
+    if (existingNames.has(parsed.template.name)) {
+      const newName = prompt(`"${parsed.template.name}" already exists. Rename to:`, `${parsed.template.name} (imported)`);
+      if (!newName) return;
+      parsed = parseTemplateImport(raw, { renameTo: newName });
+      if (!parsed.ok) {
+        alert(`Import failed: ${parsed.reason}`);
+        return;
+      }
+    }
+    try {
+      saveSessionTemplate(parsed.template);
+      renderTemplatesTab(container);
+    } catch (e) {
+      alert(`Save failed: ${e.message}`);
+    }
+  };
+
+  container.querySelectorAll('.template-launch-btn').forEach(btn => {
+    btn.onclick = () => {
+      const t = templates.find(x => x.id === btn.dataset.id);
+      if (t) {
+        window.dispatchEvent(new CustomEvent('launch-template', { detail: t }));
+        hidePanel();
+      }
+    };
+  });
+  container.querySelectorAll('.template-delete-btn').forEach(btn => {
+    btn.onclick = () => {
+      const t = templates.find(x => x.id === btn.dataset.id);
+      if (t && confirm(`Delete template "${t.name}"?`)) {
+        deleteSessionTemplate(t.id);
+        renderTemplatesTab(container);
+      }
+    };
+  });
+  container.querySelectorAll('.template-share-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const t = templates.find(x => x.id === btn.dataset.id);
+      if (!t) return;
+      try {
+        const payload = exportTemplate(t);
+        await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Share'; }, 1500);
+      } catch (e) {
+        alert(`Share failed: ${e.message}`);
       }
     };
   });
